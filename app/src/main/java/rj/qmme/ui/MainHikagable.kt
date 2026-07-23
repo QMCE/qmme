@@ -178,11 +178,35 @@ class MainHikagable(
         get() = cachedHikage ?: Hikagable {
             HLinearLayout(
                 lparams = LayoutParams(matchParent = true),
-                init = { orientation = LinearLayout.VERTICAL },
+                init = {
+                    orientation = LinearLayout.VERTICAL
+                    setBackgroundColor(
+                        MaterialColors.getColor(
+                            this,
+                            com.google.android.material.R.attr.colorSurfaceContainer,
+                        ),
+                    )
+                },
             ) {
+                // This is part of the Hikage tree, not a post-build View patch.
+                // It fills the transparent status-bar/cutout region with the same
+                // container surface as the app bar.
+                HLinearLayout(
+                    lparams = LayoutParams(widthMatchParent = true, height = 0),
+                    init = {
+                        setBackgroundColor(
+                            MaterialColors.getColor(
+                                this,
+                                com.google.android.material.R.attr.colorSurfaceContainer,
+                            ),
+                        )
+                        EdgeToEdgeInsets.applyTopInsetSpacer(this)
+                    },
+                )
                 toolbar = HMaterialToolbar(
                     lparams = LayoutParams(widthMatchParent = true),
                     init = {
+                        EdgeToEdgeInsets.applyHorizontalInsets(this)
                         // Keep the app bar in the same M3 surface container as
                         // the active page rather than letting it read as a band.
                         setBackgroundColor(
@@ -204,6 +228,7 @@ class MainHikagable(
                     init = {
                         clipChildren = false
                         clipToPadding = false
+                        EdgeToEdgeInsets.applyHorizontalInsets(this)
                     },
                 ) {
                     chatPage = buildChatPage()
@@ -220,6 +245,7 @@ class MainHikagable(
                 navigation = HBottomNavigationView(
                     lparams = LayoutParams(widthMatchParent = true),
                     init = {
+                        EdgeToEdgeInsets.applyHorizontalInsets(this)
                         labelVisibilityMode = BottomNavigationView.LABEL_VISIBILITY_LABELED
                         menu.add(0, PAGE_CHAT, 0, "消息").setIcon(R.drawable.ic_chat)
                         menu.add(0, PAGE_CONTACTS, 1, "联系人").setIcon(R.drawable.ic_contacts)
@@ -241,6 +267,20 @@ class MainHikagable(
                             true
                         }
                         selectedItemId = PAGE_CHAT
+                    },
+                )
+                // Keep the navigation component at its native Material height;
+                // the companion Hikage spacer owns only the gesture-bar region.
+                HLinearLayout(
+                    lparams = LayoutParams(widthMatchParent = true, height = 0),
+                    init = {
+                        setBackgroundColor(
+                            MaterialColors.getColor(
+                                this,
+                                com.google.android.material.R.attr.colorSurfaceContainer,
+                            ),
+                        )
+                        EdgeToEdgeInsets.applyBottomInsetSpacer(this)
                     },
                 )
             }

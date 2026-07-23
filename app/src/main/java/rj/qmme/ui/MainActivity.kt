@@ -1,6 +1,7 @@
 package rj.qmme.ui
 
 import android.os.Bundle
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
 import com.highcapable.hikage.extension.setContentView
@@ -13,6 +14,7 @@ import rj.qmme.viewmodel.ContactsViewModel
 /** Native Material 3/Hikage-compatible launcher. Compose is intentionally not used. */
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val stored = LoginPrefs.loadAccount(this)
         if (stored == null) {

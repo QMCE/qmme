@@ -76,6 +76,7 @@ class LoginHikagable(
                 init = {
                     isFillViewport = true
                     clipToPadding = false
+                    EdgeToEdgeInsets.applyContentInsets(this)
                 },
             ) {
                 contentRoot = HLinearLayout(
