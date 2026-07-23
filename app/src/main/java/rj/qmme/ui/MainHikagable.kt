@@ -19,6 +19,7 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.divider.MaterialDivider
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.textview.MaterialTextView
@@ -182,6 +183,14 @@ class MainHikagable(
                 toolbar = HMaterialToolbar(
                     lparams = LayoutParams(widthMatchParent = true),
                     init = {
+                        // Keep the app bar in the same M3 surface container as
+                        // the active page rather than letting it read as a band.
+                        setBackgroundColor(
+                            MaterialColors.getColor(
+                                this,
+                                com.google.android.material.R.attr.colorSurfaceContainer,
+                            ),
+                        )
                         title = "消息"
                         subtitle = "QQ · ${account.uin}"
                         setTitleTextAppearance(context, com.google.android.material.R.style.TextAppearance_Material3_TitleLarge)
@@ -189,7 +198,6 @@ class MainHikagable(
                         contentDescription = "主导航"
                     },
                 )
-                HMaterialDivider(lparams = LayoutParams(widthMatchParent = true))
 
                 HFrameLayout(
                     lparams = LayoutParams(widthMatchParent = true, height = 0) { weight = 1f },
@@ -244,6 +252,12 @@ class MainHikagable(
         init = {
             orientation = LinearLayout.VERTICAL
             clipToPadding = false
+            setBackgroundColor(
+                MaterialColors.getColor(
+                    this,
+                    com.google.android.material.R.attr.colorSurfaceContainer,
+                ),
+            )
         },
     ) {
         chatStatusCard = HMaterialCardView(
@@ -296,6 +310,12 @@ class MainHikagable(
         init = {
             orientation = LinearLayout.VERTICAL
             clipToPadding = false
+            setBackgroundColor(
+                MaterialColors.getColor(
+                    this,
+                    com.google.android.material.R.attr.colorSurfaceContainer,
+                ),
+            )
         },
     ) {
         contactsStatusCard = HMaterialCardView(

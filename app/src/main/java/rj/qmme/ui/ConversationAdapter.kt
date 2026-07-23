@@ -73,7 +73,7 @@ class ConversationAdapter(
                         setCardBackgroundColor(
                             MaterialColors.getColor(
                                 this,
-                                com.google.android.material.R.attr.colorSurfaceContainer,
+                                android.R.attr.colorBackground,
                             ),
                         )
                         isClickable = true
@@ -223,7 +223,7 @@ class ConversationAdapter(
                                 setDividerColor(
                                     MaterialColors.getColor(
                                         this,
-                                        com.google.android.material.R.attr.colorSurface,
+                                        com.google.android.material.R.attr.colorSurfaceContainer,
                                     ),
                                 )
                             },

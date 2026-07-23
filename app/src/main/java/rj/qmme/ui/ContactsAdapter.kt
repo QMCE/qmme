@@ -178,7 +178,7 @@ class ContactsAdapter(
                         setCardBackgroundColor(
                             MaterialColors.getColor(
                                 this,
-                                com.google.android.material.R.attr.colorSurfaceContainer,
+                                android.R.attr.colorBackground,
                             ),
                         )
                         isClickable = true
@@ -242,7 +242,23 @@ class ContactsAdapter(
                                 )
                             }
                         }
-                        divider = HMaterialDivider(lparams = LayoutParams(widthMatchParent = true))
+                        divider = HMaterialDivider(
+                            lparams = LayoutParams(
+                                widthMatchParent = true,
+                                height = dp(parent, 2),
+                            ),
+                            init = {
+                                setDividerThickness(dp(parent, 2))
+                                setDividerInsetStart(0)
+                                setDividerInsetEnd(0)
+                                setDividerColor(
+                                    MaterialColors.getColor(
+                                        this,
+                                        com.google.android.material.R.attr.colorSurfaceContainer,
+                                    ),
+                                )
+                            },
+                        )
                     }
                 }
             }
