@@ -26,9 +26,12 @@ object LoginPrefs {
             .commit()
     }
 
-    fun clear(context: Context) {
-        prefs(context).edit().remove(KEY_ACCOUNT).apply()
-    }
+    /**
+     * Forced-offline callbacks can be followed by QQ terminating this process.
+     * Commit synchronously so a stale account cannot restore on the next launch.
+     */
+    fun clear(context: Context): Boolean =
+        prefs(context).edit().remove(KEY_ACCOUNT).commit()
 
     fun hasAccount(context: Context): Boolean = loadAccount(context) != null
 }

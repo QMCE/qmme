@@ -78,6 +78,17 @@ class QmmeApp : WatchApplicationDelegate() {
         }
 
         /**
+         * Native screens consume the one-shot forced-offline signal before an
+         * Activity recreation. The durable account record was already cleared
+         * by [IAccountCallback.onLogout].
+         */
+        fun acknowledgeOfficialLogout(reason: Constants.LogoutReason) {
+            if (_logoutReason.value == reason) {
+                _logoutReason.value = null
+            }
+        }
+
+        /**
          * Bind the account returned by WtLogin to the embedded MobileQQ runtime.
          * LoginPrefs is written by the activity before the optional process restart;
          * this method updates the in-memory/runtime side immediately as well.
@@ -400,13 +411,16 @@ class QmmeApp : WatchApplicationDelegate() {
         }
 
     fun clearLocalLoginState() {
-        LoginPrefs.clear(this)
+        val persistedAccountCleared = LoginPrefs.clear(this)
         val runtime =
             sAppRuntime ?: runCatching { sMobileQQ?.peekAppRuntime() }.getOrNull()
         runCatching { runtime?.userLogoutReleaseData() }
             .onFailure { error -> Log.w("QMME", "account: release runtime failed", error) }
         resetRuntimeAfterLogout()
-        Log.d("QMME", "account: cleared runtime and saved account")
+        Log.d(
+            "QMME",
+            "account: cleared runtime and persisted account, committed=$persistedAccountCleared",
+        )
     }
 
     private fun clearExpiredLoginState() {

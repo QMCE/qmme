@@ -60,17 +60,57 @@ object OnlineStatus {
         if (started) return
         selfUid = uid
         try {
-            profileService.addProfileListener(Listener)
+            // The matching Watch APK exposes this original profile listener
+            // method under its shipped obfuscated ABI name, M().  Kotlin's
+            // metadata still calls it addProfileListener(), so a direct Kotlin
+            // call compiles to the absent phone-build symbol and crashes on the
+            // Watch runtime. Resolve the actual APK ABI without introducing a
+            // hand-written QQNT compatibility class.
+            addWatchProfileListener(profileService, Listener)
             val native = (profileService as? ProfileService)?.service
             native?.startStatusPolling(true)
-            // 预热缓存
+            // 预热缓存，并立刻发布给顶栏等已注册 UI。
             val map = native?.getStatusInfo("qmce", arrayListOf(uid))
-            if (!map.isNullOrEmpty()) merge(map)
+            if (!map.isNullOrEmpty()) {
+                merge(map)
+                notifyObservers()
+            }
             started = true
             Log.d(TAG, "OnlineStatus: started, uid=$uid")
-        } catch (e: Exception) {
-            Log.w(TAG, "OnlineStatus: start failed", e)
+        } catch (error: Throwable) {
+            // QQ runtime APIs are version-specific and can fail with a
+            // LinkageError, not only an Exception. Status must never take down
+            // the host UI if a future APK changes this private ABI again.
+            Log.w(TAG, "OnlineStatus: start failed", error)
+            notifyObservers()
         }
+    }
+
+    /**
+     * The Watch APK's [IProfileService] exposes listener registration as `M`,
+     * while its Kotlin metadata advertises the deobfuscated
+     * `addProfileListener` name.  Calling either name statically is therefore
+     * unsafe across the Kotlin/DEX boundary.  Looking up the concrete method
+     * keeps us compatible with the class actually shipped in qq-core.
+     */
+    private fun addWatchProfileListener(
+        profileService: IProfileService,
+        listener: IKernelProfileListener,
+    ) {
+        val listenerType = IKernelProfileListener::class.java
+        val method = profileService.javaClass.methods.firstOrNull { candidate ->
+            candidate.name == "M" &&
+                candidate.parameterTypes.size == 1 &&
+                candidate.parameterTypes[0] == listenerType
+        } ?: profileService.javaClass.declaredMethods.firstOrNull { candidate ->
+            candidate.name == "M" &&
+                candidate.parameterTypes.size == 1 &&
+                candidate.parameterTypes[0] == listenerType
+        } ?: throw NoSuchMethodException(
+            "${profileService.javaClass.name}.M(${listenerType.name})",
+        )
+        if (!method.isAccessible) method.isAccessible = true
+        method.invoke(profileService, listener)
     }
 
     private fun merge(map: HashMap<String, StatusInfo>) {

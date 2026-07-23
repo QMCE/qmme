@@ -9,6 +9,8 @@ import android.util.Log
 import android.util.LruCache
 import android.view.View
 import android.widget.ImageView
+import com.google.android.material.appbar.MaterialToolbar
+import androidx.core.graphics.drawable.RoundedBitmapDrawableFactory
 import com.google.android.material.imageview.ShapeableImageView
 import com.google.android.material.shape.ShapeAppearanceModel
 import com.tencent.mobileqq.qroute.QRoute
@@ -59,6 +61,8 @@ internal object AvatarLoader {
     }
     private val jobs = WeakHashMap<ImageView, Job>()
     private val requestIds = WeakHashMap<ImageView, Long>()
+    private val navigationJobs = WeakHashMap<MaterialToolbar, Job>()
+    private val navigationRequestIds = WeakHashMap<MaterialToolbar, Long>()
     private var nextRequestId = 0L
 
     /** A relative 50% corner size is a real circle for our square avatar views. */
@@ -140,6 +144,78 @@ internal object AvatarLoader {
             requestIds.remove(imageView)
         }
     }
+
+    /**
+     * Load the account avatar into MaterialToolbar's native leading navigation
+     * slot.  A toolbar custom child is not suitable here: Toolbar places it
+     * after title/subtitle regardless of its child gravity.
+     */
+    fun bindNavigationIcon(
+        toolbar: MaterialToolbar,
+        localPath: String?,
+        urls: List<String>,
+        fallback: Drawable?,
+    ) {
+        val appContext = toolbar.context.applicationContext
+        val requestId: Long
+        synchronized(this) {
+            navigationJobs.remove(toolbar)?.cancel()
+            requestId = ++nextRequestId
+            navigationRequestIds[toolbar] = requestId
+        }
+
+        toolbar.navigationIcon = fallback
+        toolbar.navigationContentDescription = "我的头像"
+        val normalizedUrls = urls
+            .asSequence()
+            .map(String::trim)
+            .filter { it.startsWith("http://") || it.startsWith("https://") }
+            .distinct()
+            .toList()
+        if (localPath.isNullOrBlank() && normalizedUrls.isEmpty()) return
+
+        val job = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            val bitmap = try {
+                load(appContext, localPath, normalizedUrls)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                Log.d(TAG, "toolbar avatar load failed", error)
+                null
+            }
+            withContext(Dispatchers.Main.immediate) {
+                val current = synchronized(this@AvatarLoader) {
+                    navigationRequestIds[toolbar] == requestId
+                }
+                if (!current) return@withContext
+                toolbar.navigationIcon = bitmap
+                    ?.takeUnless(Bitmap::isRecycled)
+                    ?.let { circularToolbarAvatar(toolbar, it) }
+                    ?: fallback
+                synchronized(this@AvatarLoader) {
+                    if (navigationRequestIds[toolbar] == requestId) {
+                        navigationJobs.remove(toolbar)
+                    }
+                }
+            }
+        }
+        synchronized(this) {
+            navigationJobs[toolbar] = job
+        }
+        job.start()
+    }
+
+    fun unbindNavigationIcon(toolbar: MaterialToolbar) {
+        synchronized(this) {
+            navigationJobs.remove(toolbar)?.cancel()
+            navigationRequestIds.remove(toolbar)
+        }
+    }
+
+    private fun circularToolbarAvatar(toolbar: MaterialToolbar, bitmap: Bitmap): Drawable =
+        RoundedBitmapDrawableFactory.create(toolbar.resources, bitmap).apply {
+            isCircular = true
+        }
 
     private suspend fun load(
         context: Context,
@@ -346,6 +422,9 @@ internal object OfficialAvatarLoader {
 }
 
 internal object AvatarSources {
+    fun forSelf(uin: String): List<String> =
+        uin.toLongOrNull()?.takeIf { it > 0L }?.let(::qlogoUrls).orEmpty()
+
     fun forRecent(contact: RecentContactInfo): List<String> {
         val result = ArrayList<String>(4)
         contact.avatarUrl

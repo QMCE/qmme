@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import androidx.core.content.ContextCompat
 import androidx.core.widget.TextViewCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -32,8 +33,8 @@ import com.highcapable.hikage.widget.android.widget.LinearLayout as HLinearLayou
 import com.highcapable.hikage.widget.android.widget.ScrollView as HScrollView
 import com.highcapable.hikage.widget.androidx.recyclerview.widget.RecyclerView as HRecyclerView
 import com.highcapable.hikage.widget.androidx.swiperefreshlayout.widget.SwipeRefreshLayout as HSwipeRefreshLayout
-import com.highcapable.hikage.widget.com.google.android.material.appbar.MaterialToolbar as HMaterialToolbar
 import com.highcapable.hikage.widget.com.google.android.material.bottomnavigation.BottomNavigationView as HBottomNavigationView
+import com.highcapable.hikage.widget.com.google.android.material.appbar.MaterialToolbar as HMaterialToolbar
 import com.highcapable.hikage.widget.com.google.android.material.card.MaterialCardView as HMaterialCardView
 import com.highcapable.hikage.widget.com.google.android.material.chip.Chip as HChip
 import com.highcapable.hikage.widget.com.google.android.material.divider.MaterialDivider as HMaterialDivider
@@ -42,9 +43,12 @@ import com.highcapable.hikage.widget.com.google.android.material.progressindicat
 import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView as HMaterialTextView
 import com.tencent.qphone.base.remote.SimpleAccount
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import rj.qmme.QmmeApp
+import rj.qmme.data.OnlineStatus
 import rj.qmme.R
 import rj.qmme.kernel.KernelBridge
 import rj.qmme.viewmodel.ChatListViewModel
@@ -155,6 +159,32 @@ class MainHikagable(
                         contactsSwipeRefresh.isRefreshing = refreshing
                     }
                 }
+                launch {
+                    val onlineObserver = ::renderOnlineStatus
+                    OnlineStatus.addObserver(onlineObserver)
+                    renderOnlineStatus()
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        OnlineStatus.removeObserver(onlineObserver)
+                    }
+                }
+            }
+        }
+
+        // Start the visible avatar immediately with the remote fallback; the
+        // self-profile path below replaces it when QQ exposes a local copy.
+        AvatarLoader.bindNavigationIcon(
+            toolbar = toolbar,
+            localPath = null,
+            urls = AvatarSources.forSelf(account.uin),
+            fallback = ContextCompat.getDrawable(context, R.drawable.ic_account_circle),
+        )
+        owner.lifecycleScope.launch {
+            try {
+                awaitCancellation()
+            } finally {
+                AvatarLoader.unbindNavigationIcon(toolbar)
             }
         }
 
@@ -169,6 +199,21 @@ class MainHikagable(
                 android.util.Log.i("QMME", "main: bind persisted account result=$bindResult")
             }
             val readyRuntime = QmmeApp.sAppRuntime ?: runtime
+            val selfAvatarPath = KernelBridge.getSelfProfileService()
+                ?.getCurrentAccountAvatarPath(account.uin)
+                .orEmpty()
+            withContext(Dispatchers.Main.immediate) {
+                AvatarLoader.bindNavigationIcon(
+                    toolbar = toolbar,
+                    localPath = selfAvatarPath,
+                    urls = AvatarSources.forSelf(account.uin),
+                    fallback = ContextCompat.getDrawable(context, R.drawable.ic_account_circle),
+                )
+            }
+            KernelBridge.getKernelService()?.getProfileService()?.let { profileService ->
+                OnlineStatus.start(profileService, account.uin)
+            }
+            withContext(Dispatchers.Main.immediate) { renderOnlineStatus() }
             chatViewModel.loadContacts(readyRuntime)
             contactsViewModel.loadBuddies(readyRuntime)
         }
@@ -215,8 +260,14 @@ class MainHikagable(
                                 com.google.android.material.R.attr.colorSurfaceContainer,
                             ),
                         )
+                        // A navigation icon is the toolbar's native leading slot.
+                        // It is intentionally used instead of a custom child: custom
+                        // children are laid out after title/subtitle by Toolbar.
+                        navigationIcon = ContextCompat.getDrawable(context, R.drawable.ic_account_circle)
+                        navigationContentDescription = "我的头像"
+                        setContentInsetsRelative(dp(72), dp(16))
                         title = "消息"
-                        subtitle = "QQ · ${account.uin}"
+                        subtitle = onlineSubtitle()
                         setTitleTextAppearance(context, com.google.android.material.R.style.TextAppearance_Material3_TitleLarge)
                         setSubtitleTextAppearance(context, com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
                         contentDescription = "主导航"
@@ -518,6 +569,13 @@ class MainHikagable(
             contactsStatus.text = "${categories.sumOf { it.buddies.size }} 位联系人"
             contactsStatusCard.visibility = View.VISIBLE
         }
+    }
+
+    private fun onlineSubtitle(): String =
+        OnlineStatus.describe() ?: "正在同步在线状态"
+
+    private fun renderOnlineStatus() {
+        toolbar.subtitle = onlineSubtitle()
     }
 
     private fun showPage(page: View) {
