@@ -1,16 +1,8 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Theme.QMME" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">@color/purple_200</item>
-        <item name="colorPrimaryVariant">@color/purple_700</item>
-        <item name="colorOnPrimary">@color/black</item>
-        <!-- Secondary brand color. -->
-        <item name="colorSecondary">@color/teal_200</item>
-        <item name="colorSecondaryVariant">@color/teal_200</item>
-        <item name="colorOnSecondary">@color/black</item>
-        <!-- Status bar color. -->
-        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
-        <!-- Customize your theme here. -->
+<resources>
+    <!-- Keep the night variant on the same dynamic M3 Expressive theme. -->
+    <style name="Theme.QMME" parent="Theme.Material3Expressive.DynamicColors.DayNight.NoActionBar">
+        <item name="listItemShapeAppearanceFirst">@style/ShapeAppearance.QMME.ListItem.First</item>
+        <item name="listItemShapeAppearanceMiddle">@style/ShapeAppearance.QMME.ListItem.Middle</item>
+        <item name="listItemShapeAppearanceLast">@style/ShapeAppearance.QMME.ListItem.Last</item>
     </style>
 </resources>

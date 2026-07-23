@@ -1,16 +1,35 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Theme.QMME" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">@color/purple_500</item>
-        <item name="colorPrimaryVariant">@color/purple_700</item>
-        <item name="colorOnPrimary">@color/white</item>
-        <!-- Secondary brand color. -->
-        <item name="colorSecondary">@color/teal_200</item>
-        <item name="colorSecondaryVariant">@color/teal_700</item>
-        <item name="colorOnSecondary">@color/black</item>
-        <!-- Status bar color. -->
-        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
-        <!-- Customize your theme here. -->
+<resources>
+    <!-- Material 3 is the source of truth for colors, typography and component states. -->
+    <style name="Theme.QMME" parent="Theme.Material3Expressive.DynamicColors.DayNight.NoActionBar">
+        <!--
+          Keep the official M3 ListItemLayout grouping behavior, but square the
+          *inner* corners. First/last retain their outer M3 large corners, so a
+          segmented group reads as one card divided by MaterialDivider instead
+          of several small rounded cards pressed together.
+        -->
+        <item name="listItemShapeAppearanceFirst">@style/ShapeAppearance.QMME.ListItem.First</item>
+        <item name="listItemShapeAppearanceMiddle">@style/ShapeAppearance.QMME.ListItem.Middle</item>
+        <item name="listItemShapeAppearanceLast">@style/ShapeAppearance.QMME.ListItem.Last</item>
+    </style>
+
+    <style name="ShapeAppearance.QMME.ListItem.First" parent="">
+        <item name="cornerFamily">?attr/shapeCornerFamily</item>
+        <item name="cornerSizeTopLeft">?attr/shapeCornerSizeLarge</item>
+        <item name="cornerSizeTopRight">?attr/shapeCornerSizeLarge</item>
+        <item name="cornerSizeBottomLeft">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
+    </style>
+
+    <style name="ShapeAppearance.QMME.ListItem.Middle" parent="">
+        <item name="cornerFamily">?attr/shapeCornerFamily</item>
+        <item name="cornerSize">0dp</item>
+    </style>
+
+    <style name="ShapeAppearance.QMME.ListItem.Last" parent="">
+        <item name="cornerFamily">?attr/shapeCornerFamily</item>
+        <item name="cornerSizeTopLeft">0dp</item>
+        <item name="cornerSizeTopRight">0dp</item>
+        <item name="cornerSizeBottomLeft">?attr/shapeCornerSizeLarge</item>
+        <item name="cornerSizeBottomRight">?attr/shapeCornerSizeLarge</item>
     </style>
 </resources>
