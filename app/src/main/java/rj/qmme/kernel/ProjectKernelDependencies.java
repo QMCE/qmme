@@ -11,6 +11,10 @@ import com.tencent.qqnt.kernel.dependences.IBusinessModule;
 import com.tencent.qqnt.kernel.dependences.IRelationModule;
 import com.tencent.qqnt.kernel.dependences.ISenderModule;
 import com.tencent.qqnt.kernel.nativeinterface.BatteryStatus;
+import com.tencent.qqnt.kernelgpro.nativeinterface.GProInitSessionConfig;
+import com.tencent.qqnt.kernelgpro.nativeinterface.IGProDependsAdapter;
+import com.tencent.qqnt.kernelgpro.nativeinterface.IKernelGProSessionListener;
+import com.tencent.qqnt.kernelgpro.nativeinterface.IQQGProWrapperSession;
 import com.tencent.qqnt.kernel.nativeinterface.DeviceInfo;
 import com.tencent.qqnt.kernel.nativeinterface.IQQNTWrapperSession;
 import com.tencent.qqnt.kernel.nativeinterface.IpType;
@@ -45,7 +49,7 @@ final class ProjectKernelDependencies {
         set(kernel, "sAppSetting", new ProjectAppSetting(runtime.getApplicationContext()));
         set(kernel, "sRelationModule", ProjectRelationModule.INSTANCE);
         set(kernel, "sSenderModule", new ProjectSenderModule(runtime));
-        set(kernel, "sBusinessModule", ProjectBusinessModule.INSTANCE);
+        set(kernel, "sBusinessModule", new ProjectBusinessModule(runtime));
         setStatic(KernelServiceImpl.class, "sAccountModule", new ProjectAccountModule());
         setStatic(KernelServiceImpl.class, "sAccountModuleList", new ArrayList<Class<?>>(List.of(ProjectAccountModule.class)));
         set(kernel, "onlineCallback", new ArrayList<>());
@@ -103,24 +107,111 @@ final class ProjectKernelDependencies {
         @Override public boolean a() { return true; }
     }
 
+    /**
+     * Project-owned equivalent of the Watch BusinessModuleInjector.  The
+     * official module initializes the optional GPro wrapper between
+     * IQQNTWrapperSession.init() and KernelServiceImpl.initService().  Leaving
+     * this callback empty changes the native startup graph: startupSessionWrapper
+     * still starts, but its gpro timer/scheduler is never attached.
+     */
     private static final class ProjectBusinessModule implements IBusinessModule {
-        static final ProjectBusinessModule INSTANCE = new ProjectBusinessModule();
-        @Override public void a(HashMap<String, String> ignored) { }
-        @Override public void start() { }
-        @Override public void stop() { }
+        private final AppRuntime runtime;
+        private volatile IQQGProWrapperSession gproSession;
+
+        ProjectBusinessModule(AppRuntime runtime) {
+            this.runtime = runtime;
+        }
+
+        @Override public void a(HashMap<String, String> sessionMap) {
+            Context context = runtime == null ? null : runtime.getApplicationContext();
+            if (sessionMap == null || !sessionMap.containsKey("gpro")) {
+                Log.d(TAG, "ProjectBusinessModule: no gpro session advertised");
+                OfflineDiagnostics.INSTANCE.record(context, "gpro_init_skipped", "reason=no_session");
+                return;
+            }
+            String sessionId = sessionMap.get("gpro");
+            if (sessionId == null || sessionId.isEmpty()) {
+                Log.w(TAG, "ProjectBusinessModule: gpro session id is empty");
+                OfflineDiagnostics.INSTANCE.record(context, "gpro_init_skipped", "reason=empty_session");
+                return;
+            }
+            try {
+                IQQGProWrapperSession session =
+                        IQQGProWrapperSession.CppProxy.getGProWrapperSession(sessionId);
+                if (session == null) {
+                    throw new IllegalStateException("GPro wrapper session is null");
+                }
+                // Match the 9.0.7 Watch module exactly.  Its GPro session
+                // starts with an empty UID/ticket set; the main NT session
+                // owns the account ticket lifecycle separately.
+                GProInitSessionConfig config = new GProInitSessionConfig(
+                        0L,
+                        "",
+                        "gpro_v1-6.db",
+                        "",
+                        "",
+                        "",
+                        ""
+                );
+                session.init(config, new IGProDependsAdapter() {}, new IKernelGProSessionListener() {
+                    @Override public void onGProSessionCreate(int result, String createdSessionId) {
+                        Log.d(TAG, "ProjectBusinessModule: gpro session result=" + result
+                                + " hasSessionId=" + (createdSessionId != null && !createdSessionId.isEmpty()));
+                        OfflineDiagnostics.INSTANCE.record(
+                                context,
+                                "gpro_session_created",
+                                "result=" + result + " hasSessionId="
+                                        + (createdSessionId != null && !createdSessionId.isEmpty())
+                        );
+                    }
+                    @Override public void onGetSelfTinyId(long tinyId) {
+                        Log.d(TAG, "ProjectBusinessModule: gpro self tiny id received");
+                    }
+                });
+                gproSession = session;
+                OfflineDiagnostics.INSTANCE.record(
+                        context,
+                        "gpro_init_requested",
+                        "sessionIdPresent=true config=official_watch_9.0.7"
+                );
+            } catch (Throwable error) {
+                Log.w(TAG, "ProjectBusinessModule: gpro initialization failed", error);
+                OfflineDiagnostics.INSTANCE.record(
+                        context,
+                        "gpro_init_failed",
+                        "error=" + error.getClass().getSimpleName()
+                );
+            }
+        }
+
+        @Override public void start() {
+            Log.d(TAG, "ProjectBusinessModule: start");
+        }
+
+        @Override public void stop() {
+            gproSession = null;
+            Log.d(TAG, "ProjectBusinessModule: stop");
+        }
     }
 
     private static final class ProjectAccountModule implements IAccountModule {
         @Override public void a(AppRuntime app, IQQNTWrapperSession session) { }
         @Override public OnLineBusinessInfo b(AppRuntime app) { return new OnLineBusinessInfo(0, 0, 0); }
         @Override public List<String> c(String uin, AppRuntime app) {
-            TicketRuntimeSnapshot t = TicketRuntimeSnapshot.read(app, uin);
+            TicketSnapshot t = TicketSnapshot.read(app, uin);
             return List.of(t.a2, t.d2, t.d2Key);
         }
         @Override public DeviceInfo d(AppRuntime app) {
             return ProjectKernelDeviceInfo.safeCreate(app.getApplicationContext(), app);
         }
-        @Override public boolean e(AppRuntime app) { return true; }
+        @Override public boolean e(AppRuntime app) {
+            try {
+                return app.getCurAccLoginType() != 5;
+            } catch (Throwable error) {
+                Log.w(TAG, "ProjectAccountModule: login type unavailable", error);
+                return true;
+            }
+        }
     }
 
     private static final class ProjectSenderModule implements ISenderModule {
@@ -163,7 +254,15 @@ final class ProjectKernelDependencies {
                 return "";
             }
         }
-        @Override public String[] b() { return new String[0]; }
+        @Override public String[] b() {
+            try {
+                String[] commands = runtime.getMessagePushSSOCommands();
+                return commands == null ? new String[0] : commands;
+            } catch (Throwable error) {
+                Log.w(TAG, "ProjectSenderModule: message push command list unavailable", error);
+                return new String[0];
+            }
+        }
         @Override public void c(long seq, String service, byte[] body, SendRequestParam param, String cmd, HashMap<String, byte[]> ext) { }
         @Override public BatteryStatus getBatteryStatus() { return new BatteryStatus(100, false); }
         @Override public ArrayList<ServerAddress> getIpDirectList(String host, IpType type) { return new ArrayList<>(); }
@@ -210,10 +309,11 @@ final class ProjectKernelDependencies {
         @Override public void onSendOidbRequest(long seq, int service, int command, byte[] body, SendRequestParam param, String cmd, HashMap<String, byte[]> ext) { }
     }
 
-    private static final class TicketRuntimeSnapshot {
+    private static final class TicketSnapshot {
         final String a2, d2, d2Key;
-        TicketRuntimeSnapshot(String a2, String d2, String d2Key) { this.a2 = a2; this.d2 = d2; this.d2Key = d2Key; }
-        static TicketRuntimeSnapshot read(AppRuntime runtime, String uin) {
+        TicketSnapshot(String a2, String d2, String d2Key) { this.a2 = a2; this.d2 = d2; this.d2Key = d2Key; }
+        boolean ready() { return !a2.isEmpty() && !d2.isEmpty() && !d2Key.isEmpty(); }
+        static TicketSnapshot read(AppRuntime runtime, String uin) {
             try {
                 Class<?> type = Class.forName("com.tencent.qqnt.account.login.api.ITicketRuntimeService");
                 Object svc = runtime.getClass().getMethod("getRuntimeService", Class.class, String.class)
@@ -222,9 +322,9 @@ final class ProjectKernelDependencies {
                 Object raw = type.getMethod("getLocalTicket", String.class, int.class).invoke(svc, uin, 262144);
                 byte[] sig = raw == null ? null : (byte[]) raw.getClass().getField("_sig").get(raw);
                 byte[] key = raw == null ? null : (byte[]) raw.getClass().getField("_sig_key").get(raw);
-                return new TicketRuntimeSnapshot(a2 == null ? "" : a2, hex(sig), hex(key));
+                return new TicketSnapshot(a2 == null ? "" : a2, hex(sig), hex(key));
             } catch (Throwable ignored) {
-                return new TicketRuntimeSnapshot("", "", "");
+                return new TicketSnapshot("", "", "");
             }
         }
         private static String hex(byte[] bytes) {
