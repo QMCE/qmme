@@ -45,18 +45,34 @@ final class ProjectKernelDeviceInfo {
         String vendorOsName = valueOrEmpty(runRomVersion());
         boolean setMute = isMuted(context);
         int vendorType = thirdPushType();
-        return new DeviceInfo(
-                buildVer,
-                devName,
-                localId,
-                devType,
-                guid,
-                osVer,
-                vendorName,
-                vendorOsName,
-                setMute,
-                vendorType
-        );
+        // DeviceInfo's generated constructor is *not* ordered like the
+        // official field-population sequence.  Its first two parameters are
+        // guid/buildVer, followed by localId, devName, devType, vendorName,
+        // osVer, vendorOsName, setMute and vendorType.  The previous code
+        // passed the values in the official log order, which silently swapped
+        // guid/buildVer/devType/devName/vendorName/osVer.  Native startup then
+        // received a structurally valid object with semantically invalid
+        // device fields and crashed later in TimerBase during start().
+        // Populate through setters to make the ABI contract explicit and keep
+        // it aligned with KernelSetterImpl.Companion.b().
+        DeviceInfo info = new DeviceInfo();
+        info.setGuid(guid);
+        info.setBuildVer(buildVer);
+        info.setLocalId(localId);
+        info.setDevType(devType);
+        info.setDevName(devName);
+        info.setVendorName(vendorName);
+        info.setOsVer(osVer);
+        info.setVendorOsName(vendorOsName);
+        info.setSetMute(setMute);
+        info.setVendorType(vendorType);
+        Log.d(TAG, "ProjectKernelDeviceInfo: ready guidLen=" + guid.length()
+                + " buildVer=" + buildVer + " devType=" + devType
+                + " devName=" + devName + " vendorName=" + vendorName
+                + " osVer=" + osVer + " vendorOsName=" + vendorOsName
+                + " localId=" + localId + " mute=" + setMute
+                + " vendorType=" + vendorType);
+        return info;
     }
 
     private static String readGuid(AppRuntime runtime, Context context) {

@@ -10,23 +10,31 @@ import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /** Saves a local or remote image into the user's Pictures/QMME collection. */
 class MediaStoreSaver {
-    suspend fun saveImage(context: Context, source: String): Result<Unit> = runCatching {
-        require(source.isNotBlank()) { "图片地址不可用" }
-        val opened = openSource(context.applicationContext, source)
-        try {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                saveLegacy(context, opened)
-            } else {
-                saveModern(context, opened)
+    suspend fun saveImage(context: Context, source: String): Result<Unit> {
+        return try {
+            require(source.isNotBlank()) { "图片地址不可用" }
+            val opened = openSource(context.applicationContext, source)
+            try {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                    saveLegacy(context, opened)
+                } else {
+                    saveModern(context, opened)
+                }
+            } finally {
+                opened.disconnect()
             }
-        } finally {
-            opened.disconnect()
+            Result.success(Unit)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            Result.failure(error)
         }
     }
 
@@ -47,7 +55,7 @@ class MediaStoreSaver {
             ?: error("无法创建媒体文件")
         try {
             opened.input.use { input ->
-                resolver.openOutputStream(uri)?.use(input::copyTo)
+                resolver.openOutputStream(uri)?.use { output -> input.copyLimitedTo(output) }
                     ?: error("无法写入媒体文件")
             }
             resolver.update(
@@ -70,7 +78,9 @@ class MediaStoreSaver {
         )
         if (!directory.exists() && !directory.mkdirs()) error("无法创建图片目录")
         val output = File(directory, displayName(extensionForMime(opened.mimeType)))
-        opened.input.use { input -> output.outputStream().use(input::copyTo) }
+        opened.input.use { input ->
+            output.outputStream().use { stream -> input.copyLimitedTo(stream) }
+        }
         android.media.MediaScannerConnection.scanFile(
             context,
             arrayOf(output.absolutePath),
@@ -118,6 +128,19 @@ class MediaStoreSaver {
                 check(file.length() <= MAX_BYTES) { "图片文件过大" }
                 OpenedSource(file.inputStream(), guessMimeType(file.name))
             }
+        }
+    }
+
+    private fun InputStream.copyLimitedTo(output: java.io.OutputStream) {
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var total = 0L
+        while (true) {
+            val count = read(buffer)
+            if (count < 0) break
+            if (count == 0) continue
+            total += count
+            check(total <= MAX_BYTES) { "图片文件过大" }
+            output.write(buffer, 0, count)
         }
     }
 

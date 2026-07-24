@@ -366,7 +366,9 @@ class ChatDetailHikagable(
                     },
                 )
             }
-            if (message.outgoing && message.messageId > 0L && message.sendStatus != 2) {
+            if (message.outgoing && message.messageId > 0L &&
+                message.sendStatus != 0 && message.sendStatus != 2
+            ) {
                 add(Action("重发") { viewModel.resendMessage(message) })
             }
         }
