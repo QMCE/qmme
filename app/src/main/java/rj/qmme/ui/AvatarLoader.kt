@@ -70,9 +70,19 @@ internal object AvatarLoader {
         .setAllCornerSizes(ShapeAppearanceModel.PILL)
         .build()
 
+    /** Message media and full-screen previews must keep their natural rectangular shape. */
+    private val rectangularImageShape = ShapeAppearanceModel.builder()
+        .setAllCornerSizes(0f)
+        .build()
+
     /** Apply the same crop to every visible avatar entry point. */
     fun makeCircular(imageView: ImageView) {
         (imageView as? ShapeableImageView)?.shapeAppearanceModel = circularAvatarShape
+    }
+
+    /** Remove a recycled avatar shape before binding ordinary rectangular media. */
+    fun makeRectangular(imageView: ImageView) {
+        (imageView as? ShapeableImageView)?.shapeAppearanceModel = rectangularImageShape
     }
 
     /**
@@ -85,8 +95,9 @@ internal object AvatarLoader {
         localPath: String?,
         urls: List<String>,
         fallback: Drawable?,
+        circular: Boolean = true,
     ) {
-        makeCircular(imageView)
+        if (circular) makeCircular(imageView) else makeRectangular(imageView)
         val appContext = imageView.context.applicationContext
         val requestId: Long
         synchronized(this) {

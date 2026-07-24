@@ -34,10 +34,12 @@ import mqq.app.MobileQQ
 import rj.qmme.data.LoginPrefs
 import rj.qmme.data.emotion.EmotionAssetBridge
 import rj.qmme.data.reporting.OfficialReportBridge
+import rj.qmme.diagnostics.OfflineDiagnostics
 import rj.qmme.fix.LegacyKiller
 import rj.qmme.fix.PackageSignatureProvider
 import rj.qmme.fix.SignatureProbe
 import rj.qmme.kernel.KernelBridge
+import rj.qmme.runtime.RuntimeCoordinator
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -47,12 +49,40 @@ import kotlin.system.exitProcess
 @Suppress("SpellCheckingInspection")
 class QmmeApp : WatchApplicationDelegate() {
     private val logoutCallback = object : IAccountCallback {
-        override fun onAccountChangeFailed(runtime: AppRuntime?) = Unit
+        override fun onAccountChangeFailed(runtime: AppRuntime?) {
+            OfflineDiagnostics.record(
+                this@QmmeApp,
+                "account_change_failed",
+                "runtimeIdentity=${runtime?.let(System::identityHashCode) ?: "none"} " +
+                        "isLogin=${runCatching { runtime?.isLogin() }.getOrNull()}",
+            )
+        }
 
-        override fun onAccountChanged(runtime: AppRuntime?) = Unit
+        override fun onAccountChanged(runtime: AppRuntime?) {
+            OfflineDiagnostics.record(
+                this@QmmeApp,
+                "account_changed",
+                "runtimeIdentity=${runtime?.let(System::identityHashCode) ?: "none"} " +
+                        "isLogin=${runCatching { runtime?.isLogin() }.getOrNull()}",
+            )
+        }
 
         override fun onLogout(reason: Constants.LogoutReason?) {
+            val active = RuntimeCoordinator.currentRuntime()
+            OfflineDiagnostics.record(
+                this@QmmeApp,
+                "account_logout_callback",
+                "reason=${reason ?: "unknown"} forced=${reason in forcedLogoutReasons} " +
+                        "runtimeIdentity=${active?.let(System::identityHashCode) ?: "none"} " +
+                        "isLogin=${runCatching { active?.isLogin() }.getOrNull()} " +
+                        "hasPersistedAccount=${LoginPrefs.hasAccount(this@QmmeApp)}",
+            )
             if (reason !in forcedLogoutReasons) return
+            RuntimeCoordinator.markLogout(
+                runtime = RuntimeCoordinator.currentRuntime(),
+                reason = "official:${reason ?: "unknown"}",
+                source = "QmmeApp.logoutCallback",
+            )
             clearExpiredLoginState()
             _logoutReason.value = reason
             Log.w("QMME", "account: official logout reason=$reason")
@@ -100,21 +130,74 @@ class QmmeApp : WatchApplicationDelegate() {
             return runCatching {
                 mobile.setLastLoginUin(uin)
                 mobile.setSortAccountList(arrayListOf(account))
-                val runtime = ensureRuntime(mobile) ?: return "runtime null"
-                val runtimeUin = runCatching { runtime.currentUin }.getOrNull().orEmpty()
-                if (runtime.isLogin() && runtimeUin == uin) {
-                    Log.d("QMME", "account: login skipped; runtime already bound uin=$uin")
+                val initialRuntime = ensureRuntime(mobile) ?: return "runtime null"
+                RuntimeCoordinator.markAccountBinding(
+                    runtime = initialRuntime,
+                    uin = uin,
+                    source = "QmmeApp.bindLoggedInAccount",
+                )
+                val initialUin = runCatching { initialRuntime.currentUin }.getOrNull().orEmpty()
+                val alreadyBound = initialRuntime.isLogin() && initialUin == uin
+                val runtime = if (alreadyBound) {
+                    initialRuntime
                 } else {
-                    runtime.login(account)
-                    runtime.setLogined()
-                }
+                    // AppRuntime.login() schedules MobileQQ.createNewRuntime().
+                    // Do not set the old runtime's login bit or publish it as the
+                    // new account; wait for MobileQQ to publish the replacement.
+                    initialRuntime.login(account)
+                    awaitRuntimeForAccount(mobile, initialRuntime, uin)
+                } ?: return "runtime switch pending"
+
                 val loginOk = runCatching { runtime.isLogin() }.getOrDefault(false)
-                Log.d("QMME", "account: bound uin=$uin runtime=$runtime isLogin=$loginOk")
+                RuntimeCoordinator.markAccountBound(
+                    runtime = runtime,
+                    uin = uin,
+                    source = "QmmeApp.bindLoggedInAccount",
+                )
+                sAppRuntime = runtime
+                RuntimeCoordinator.observeLegacyMirror(
+                    sAppRuntime,
+                    source = "QmmeApp.bindLoggedInAccount",
+                )
+                Log.d(
+                    "QMME",
+                    "account: bound uin=${RuntimeCoordinator.redactUin(uin)} " +
+                            "runtimeIdentity=${System.identityHashCode(runtime)} isLogin=$loginOk " +
+                            "reused=$alreadyBound",
+                )
                 if (loginOk) "ok" else "runtime not logged in"
             }.getOrElse { error ->
-                Log.e("QMME", "account: bind failed uin=$uin", error)
+                Log.e(
+                    "QMME",
+                    "account: bind failed uin=${RuntimeCoordinator.redactUin(uin)}",
+                    error,
+                )
                 "failed: ${error.javaClass.simpleName}: ${error.message}"
             }
+        }
+
+        private fun awaitRuntimeForAccount(
+            app: MobileQQ,
+            previous: AppRuntime?,
+            uin: String,
+            timeoutMillis: Long = 15_000L,
+        ): AppRuntime? {
+            val deadline = System.currentTimeMillis() + timeoutMillis
+            while (System.currentTimeMillis() < deadline) {
+                val candidate = runCatching { app.peekAppRuntime() }.getOrNull()
+                if (candidate != null && candidate !== previous) {
+                    sAppRuntime = candidate
+                    RuntimeCoordinator.observeRuntime(
+                        candidate,
+                        source = "QmmeApp.awaitRuntimeForAccount",
+                    )
+                    val candidateUin = runCatching { candidate.currentUin }.getOrNull().orEmpty()
+                    val candidateLoggedIn = runCatching { candidate.isLogin() }.getOrDefault(false)
+                    if (candidateUin == uin && candidateLoggedIn) return candidate
+                }
+                Thread.sleep(100L)
+            }
+            return null
         }
 
         /**
@@ -129,7 +212,10 @@ class QmmeApp : WatchApplicationDelegate() {
             if (uin.isBlank()) return null
             runCatching { app.setLastLoginUin(uin) }
             runCatching { app.setSortAccountList(arrayListOf(account)) }
-            Log.i("QMME", "account: restored persisted uin=$uin")
+            Log.i(
+                "QMME",
+                "account: restored persisted uin=${RuntimeCoordinator.redactUin(uin)}",
+            )
             return account
         }
 
@@ -219,8 +305,23 @@ class QmmeApp : WatchApplicationDelegate() {
         }
 
         fun resetRuntimeAfterLogout(app: MobileQQ? = sMobileQQ) {
+            val runtime = RuntimeCoordinator.currentRuntime()
+                ?: sAppRuntime
+                ?: runCatching { app?.peekAppRuntime() }.getOrNull()
+            RuntimeCoordinator.markLogout(
+                runtime = runtime,
+                reason = "resetRuntimeAfterLogout",
+                source = "QmmeApp.resetRuntimeAfterLogout",
+            )
+            KernelBridge.clearServiceCache("QmmeApp.resetRuntimeAfterLogout")
             sAppRuntime = null
-            app ?: return
+            if (app == null) {
+                RuntimeCoordinator.clearRuntime(
+                    runtime = runtime,
+                    source = "QmmeApp.resetRuntimeAfterLogout.noMobileQQ",
+                )
+                return
+            }
             runCatching { app.setSortAccountList(emptyList()) }
             runCatching { app.lastLoginUin = "" }
             runCatching {
@@ -238,66 +339,100 @@ class QmmeApp : WatchApplicationDelegate() {
                 ntInitUinField.isAccessible = true
                 ntInitUinField.set(app, null)
             }
+            RuntimeCoordinator.clearRuntime(
+                runtime = runtime,
+                source = "QmmeApp.resetRuntimeAfterLogout",
+            )
         }
 
         fun ensureRuntime(app: MobileQQ? = sMobileQQ): AppRuntime? {
-            if (sAppRuntime != null) return sAppRuntime
+            val coordinatedRuntime = RuntimeCoordinator.currentRuntime()
+            if (coordinatedRuntime != null && coordinatedRuntime !== sAppRuntime) {
+                Log.w(
+                    "QMME",
+                    "runtime: legacy mirror mismatch; adopting coordinator runtime " +
+                            "generation=${RuntimeCoordinator.currentSession()?.generation} " +
+                            "runtimeIdentity=${System.identityHashCode(coordinatedRuntime)}",
+                )
+                sAppRuntime = coordinatedRuntime
+            }
+            sAppRuntime?.let {
+                RuntimeCoordinator.observeRuntime(it, source = "QmmeApp.ensureRuntime.cached")
+                RuntimeCoordinator.observeLegacyMirror(it, source = "QmmeApp.ensureRuntime.cached")
+                return it
+            }
+
             val mobile = app ?: return null
-            if (BuildConfig.APPLICATION_ID != runCatching { mobile.qqProcessName }.getOrNull()) return null
-            // 优先 waitAppRuntime — 它内部调 onCreate(Bundle) 设置 isRunning=true
-            runCatching { mobile.waitAppRuntime() }.getOrNull()?.let {
-                sAppRuntime = it
+            val processName = runCatching { mobile.qqProcessName }.getOrNull()
+            if (BuildConfig.APPLICATION_ID != processName) {
                 Log.d(
                     "QMME",
-                    "ensureRuntime: waitAppRuntime=$it, isRunning=${it.isRunning}, isLogin=${it.isLogin()}"
+                    "ensureRuntime: not the main process processName=$processName",
                 )
-                return it
+                return null
             }
-            // fallback: peekAppRuntime
-            runCatching { mobile.peekAppRuntime() }.getOrNull()?.let {
-                sAppRuntime = it
-                return it
+
+            fun adopt(runtime: AppRuntime?, source: String): AppRuntime? {
+                if (runtime == null) return null
+                sAppRuntime = runtime
+                RuntimeCoordinator.observeRuntime(
+                    runtime,
+                    processName = processName,
+                    source = source,
+                )
+                RuntimeCoordinator.observeLegacyMirror(runtime, source = source)
+                Log.d(
+                    "QMME",
+                    "ensureRuntime: source=$source identity=${System.identityHashCode(runtime)}, " +
+                            "isRunning=${runCatching { runtime.isRunning }.getOrDefault(false)}, " +
+                            "isLogin=${runCatching { runtime.isLogin() }.getOrDefault(false)}",
+                )
+                return runtime
             }
-            // 最后 createRuntime（不调 onCreate，isRunning 为 false，仅作兜底）
-            if (mobile is QmmeApp) {
-                val runtime = runCatching {
-                    mobile.createRuntime(
-                        mobile.qqProcessName,
-                        false
-                    )
-                }.getOrNull()
-                    ?: runCatching {
-                        mobile.createRuntime(
-                            BuildConfig.APPLICATION_ID,
-                            false
-                        )
-                    }.getOrNull()
-                if (runtime != null) {
-                    sAppRuntime = runtime
-                    runCatching {
-                        val f = MobileQQ::class.java.getDeclaredField("mAppRuntime")
-                        f.isAccessible = true
-                        f.set(mobile, runtime)
-                    }
-                    runCatching {
-                        val f = MobileQQ::class.java.getDeclaredField("mRuntimeState")
-                        f.isAccessible = true
-                        (f.get(mobile) as? AtomicInteger)?.set(3)
-                    }
-                    // 手动补 onCreate 让 isRunning=true
-                    runCatching { runtime.onCreate(null) }
-                    Log.d(
-                        "QMME",
-                        "ensureRuntime: createRuntime=$runtime, isRunning=${runtime.isRunning}, isLogin=${runtime.isLogin()}"
-                    )
-                    return runtime
-                }
-            }
-            return null
+
+            // Keep MobileQQ's official ownership boundary. waitAppRuntime() either
+            // returns the runtime created by MobileQQ.doInit/createNewRuntime or
+            // waits for that initialization to publish mAppRuntime.
+            adopt(
+                runCatching { mobile.waitAppRuntime() }
+                    .onFailure { Log.w("QMME", "ensureRuntime: waitAppRuntime failed", it) }
+                    .getOrNull(),
+                "QmmeApp.ensureRuntime.waitAppRuntime",
+            )?.let { return it }
+
+            // A ready runtime can be published between the wait and this read.
+            adopt(
+                runCatching { mobile.peekAppRuntime() }
+                    .onFailure { Log.w("QMME", "ensureRuntime: peekAppRuntime failed", it) }
+                    .getOrNull(),
+                "QmmeApp.ensureRuntime.peekAppRuntime",
+            )?.let { return it }
+
+            // Do not construct an AppRuntime, set mRuntimeState, or call onCreate
+            // ourselves. If MobileQQ is still empty, let its own initializer load
+            // the persisted account and execute the normal createRuntime path.
+            runCatching { mobile.doInit(true) }
+                .onFailure { Log.e("QMME", "ensureRuntime: official doInit failed", it) }
+
+            adopt(
+                runCatching { mobile.waitAppRuntime() }
+                    .onFailure { Log.w("QMME", "ensureRuntime: wait after doInit failed", it) }
+                    .getOrNull(),
+                "QmmeApp.ensureRuntime.waitAfterDoInit",
+            )?.let { return it }
+            return adopt(
+                runCatching { mobile.peekAppRuntime() }.getOrNull(),
+                "QmmeApp.ensureRuntime.peekAfterDoInit",
+            )
         }
     }
 
     override fun attachBaseContext(base: Context) {
+        RuntimeCoordinator.onApplicationAttach(
+            context = base,
+            processName = runCatching { currentProcessNameByActivityThread }.getOrNull(),
+            source = "QmmeApp.attachBaseContext.start",
+        )
         Log.d("QMME", "attachBaseContext start")
         LegacyKiller.installForCurrentPackage(base)   // PM proxy for package name mapping (always needed)
         PackageSignatureProvider.install()                 // new CREATOR hook for IPC signature
@@ -314,29 +449,33 @@ class QmmeApp : WatchApplicationDelegate() {
             .onFailure { Log.e("QMME", "emotion asset bridge failed", it) }
         super.attachBaseContext(base)
         MultiDex.install(this)
+        RuntimeCoordinator.onApplicationAttach(
+            context = this,
+            processName = runCatching { currentProcessNameByActivityThread }.getOrNull(),
+            source = "QmmeApp.attachBaseContext.done",
+        )
         Log.d("QMME", "attachBaseContext done")
     }
 
     override fun onCreate() {
         Log.d("QMME", "onCreate start")
+        // The official ApplicationCreate stage dispatches CrashInitTask and
+        // other worker tasks from MobileQQ.super.onCreate().  Initialize the
+        // project QMMKV backend first so those tasks never observe the
+        // transient "mmkvCreateInstance without init" state.
+        initializeQmmkv()
         super.onCreate()
+        RuntimeCoordinator.onApplicationCreate(
+            context = this,
+            processName = runCatching { currentProcessNameByActivityThread }.getOrNull(),
+            source = "QmmeApp.onCreate.afterSuper",
+        )
         Log.d("QMME", "onCreate super done")
         CrashCatcher.install(this)
         Log.d("QMME", "crashcatcher init done")
         SignatureProbe.dump(this)
-        // MMKVInitTask ：必须在 getLastLoginUin 等调用前完成
-        synchronized(QMMKV::class.java) {
-            if (!QMMKV.d) {
-                QMMKV.e = MMKVHandlerImpl()
-                runCatching {
-                    MMKV.t(this)
-                    MMKV.z(QMMKV.e)
-                    MMKV.y(QMMKV.e)
-                    QMMKV.d = true
-                    Log.d("QMME", "MMKV init OK")
-                }.onFailure { Log.e("QMME", "MMKV init failed", it) }
-            }
-        }
+        // Kept idempotent for warm-starts and vendor process recreation.
+        initializeQmmkv()
         if (isMainProcess()) {
             // Keep MobileQQ's own cold-start lifecycle intact.  In particular, do not
             // replay LoginPrefs here: setSortAccountList()/login() during Application
@@ -349,6 +488,20 @@ class QmmeApp : WatchApplicationDelegate() {
             initializeOfficialImageRuntime()
             registerLogoutCallback()
             OfficialReportBridge.initialize(this)
+        }
+    }
+
+    private fun initializeQmmkv() {
+        synchronized(QMMKV::class.java) {
+            if (QMMKV.d) return
+            QMMKV.e = MMKVHandlerImpl()
+            runCatching {
+                MMKV.t(this)
+                MMKV.z(QMMKV.e)
+                MMKV.y(QMMKV.e)
+                QMMKV.d = true
+                Log.d("QMME", "MMKV init OK")
+            }.onFailure { Log.e("QMME", "MMKV init failed", it) }
         }
     }
 
@@ -413,7 +566,10 @@ class QmmeApp : WatchApplicationDelegate() {
     fun clearLocalLoginState() {
         val persistedAccountCleared = LoginPrefs.clear(this)
         val runtime =
-            sAppRuntime ?: runCatching { sMobileQQ?.peekAppRuntime() }.getOrNull()
+            RuntimeCoordinator.currentRuntime()
+                ?: sAppRuntime
+                ?: runCatching { sMobileQQ?.peekAppRuntime() }.getOrNull()
+        RuntimeCoordinator.observeLegacyMirror(runtime, source = "QmmeApp.clearLocalLoginState")
         runCatching { runtime?.userLogoutReleaseData() }
             .onFailure { error -> Log.w("QMME", "account: release runtime failed", error) }
         resetRuntimeAfterLogout()
@@ -453,44 +609,26 @@ class QmmeApp : WatchApplicationDelegate() {
     }
 
     override fun createRuntime(processName: String?, readyNew: Boolean): AppRuntime? {
-        // Keep apktool WatchApplicationDelegate semantics: only the main package process
-        // owns WatchAppInterface. The :MSF process runs MsfService only; creating a
-        // business runtime there pulls in unrelated app services and crashes.
+        // Keep the apktool WatchApplicationDelegate contract: only the package
+        // process owns a WatchAppInterface. MobileQQ is responsible for init(),
+        // account restoration, setLogined(), onCreate(), and publishing
+        // mAppRuntime; this factory must remain side-effect free beyond creating
+        // the object and assigning its process suffix.
         if (processName != BuildConfig.APPLICATION_ID) return null
-        val oldRuntime = sAppRuntime
         val runtime = WatchAppInterface(this, processName)
+        val suffix = MobileQQ.getProcessSuffix(processName, BuildConfig.APPLICATION_ID)
+        runtime.setProcessName(suffix)
         sAppRuntime = runtime
-        // 新 runtime 自动继承旧 runtime 的登录态 — 出生即"活"
-        if (oldRuntime != null && oldRuntime.isLogin()) {
-            val uin = runCatching { oldRuntime.currentUin }.getOrNull()
-            // 从 MobileQQ 拿 SimpleAccount（login() 需要）
-            val account = runCatching {
-                val m = sMobileQQ?.javaClass?.methods?.firstOrNull {
-                    it.name == "getAccount" && it.parameterTypes.isEmpty()
-                }
-                m?.invoke(sMobileQQ) as? com.tencent.qphone.base.remote.SimpleAccount
-            }.getOrNull()
-            if (account != null) runCatching { runtime.login(account) }
-            runCatching { runtime.setLogined() }
-            // 不调 onCreate — caller（waitAppRuntime）会自己调，重复调会 addManager duplicated crash
-            Log.d(
-                "QMME",
-                "createRuntime: adopted login uin=$uin, old=$oldRuntime -> new=$runtime, isLogin=${runtime.isLogin()}"
-            )
-            // 更新 mAppRuntime 字段
-            runCatching {
-                val f = MobileQQ::class.java.getDeclaredField("mAppRuntime")
-                f.isAccessible = true
-                f.set(sMobileQQ, runtime)
-            }
-            runCatching {
-                val f = MobileQQ::class.java.getDeclaredField("mRuntimeState")
-                f.isAccessible = true
-                (f.get(sMobileQQ) as? AtomicInteger)?.set(3)
-            }
-        } else {
-            Log.d("QMME", "createRuntime: new=$runtime (no old runtime or not logged in)")
-        }
+        RuntimeCoordinator.registerRuntime(
+            runtime = runtime,
+            processName = processName,
+            source = "QmmeApp.createRuntime",
+        )
+        Log.d(
+            "QMME",
+            "createRuntime: identity=${System.identityHashCode(runtime)} " +
+                    "process=$processName suffix=$suffix readyNew=$readyNew",
+        )
         return runtime
     }
 

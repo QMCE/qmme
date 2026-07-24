@@ -27,6 +27,7 @@ import mqq.app.MobileQQ
 import oicq.wlogin_sdk.tools.ErrMsg
 import rj.qmme.BuildConfig
 import rj.qmme.QmmeApp
+import rj.qmme.runtime.RuntimeCoordinator
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -180,7 +181,9 @@ class AuthViewModel : ViewModel() {
     private suspend fun awaitLoginServices(): LoginServices? = serviceInitMutex.withLock {
         val cachedRuntime = appRuntime
         val cachedService = wtService
-        if (cachedRuntime != null && cachedService != null && isRuntimeRunning(cachedRuntime)) {
+        if (cachedRuntime != null && cachedService != null &&
+            RuntimeCoordinator.isCurrent(cachedRuntime) && isRuntimeRunning(cachedRuntime)
+        ) {
             return@withLock LoginServices(cachedRuntime, cachedService)
         }
 
@@ -188,8 +191,15 @@ class AuthViewModel : ViewModel() {
         withTimeoutOrNull(SERVICE_INIT_TIMEOUT_MS) {
             while (resolved == null) {
                 val runtime = withContext(Dispatchers.IO) {
-                    runCatching { MobileQQ.sMobileQQ?.waitAppRuntime() }.getOrNull()
+                    RuntimeCoordinator.currentRuntime()
+                        ?: runCatching { MobileQQ.sMobileQQ?.waitAppRuntime() }.getOrNull()
                         ?: QmmeApp.ensureRuntime()
+                }
+                if (runtime != null) {
+                    RuntimeCoordinator.observeRuntime(
+                        runtime,
+                        source = "AuthViewModel.awaitLoginServices",
+                    )
                 }
                 val service = runtime?.let {
                     runCatching {
@@ -209,6 +219,10 @@ class AuthViewModel : ViewModel() {
         resolved?.also {
             appRuntime = it.runtime
             wtService = it.wtService
+            appendLog(
+                "runtime generation=${RuntimeCoordinator.sessionFor(it.runtime)?.generation ?: "none"} " +
+                        "identity=${System.identityHashCode(it.runtime)}",
+            )
         }
         resolved
     }

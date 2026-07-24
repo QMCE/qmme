@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import mqq.app.AppRuntime
 import rj.qmme.kernel.KernelBridge
+import rj.qmme.runtime.RuntimeCoordinator
 import java.util.LinkedHashMap
 import kotlin.Unit
 
@@ -106,6 +107,7 @@ class ChatListViewModel : ViewModel() {
             publishStatus("QQ Runtime 不可用")
             return
         }
+        RuntimeCoordinator.observeRuntime(runtime, source = "ChatListViewModel.loadContacts")
         this.runtime = runtime
         running = true
         if (loading) {

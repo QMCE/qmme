@@ -51,6 +51,7 @@ import rj.qmme.QmmeApp
 import rj.qmme.data.OnlineStatus
 import rj.qmme.R
 import rj.qmme.kernel.KernelBridge
+import rj.qmme.runtime.RuntimeCoordinator
 import rj.qmme.viewmodel.ChatListViewModel
 import rj.qmme.viewmodel.ContactsViewModel
 
@@ -64,6 +65,8 @@ class MainHikagable(
     private val account: SimpleAccount,
     private val onLogout: () -> Unit,
     private val onForceExit: () -> Unit,
+    private val onOpenChat: (com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo) -> Unit,
+    private val onOpenContactChat: (ContactsViewModel.UiBuddy) -> Unit,
 ) : HikageScreen {
     private lateinit var toolbar: MaterialToolbar
     private lateinit var chatPage: LinearLayout
@@ -99,16 +102,8 @@ class MainHikagable(
         boundChatViewModel = chatViewModel
         boundContactsViewModel = contactsViewModel
 
-        chatRecyclerView.adapter = ConversationAdapter(chatViewModel) { contact ->
-            // ChatDetail migration is next; keep the native row action explicit for now.
-            android.util.Log.d("QMME", "open conversation peerUid=${contact.peerUid}")
-        }
-        contactsRecyclerView.adapter = ContactsAdapter { buddy ->
-            android.util.Log.d(
-                "QMME",
-                "open contact uid=${buddy.uid} uin=${buddy.uin} name=${buddy.nick}",
-            )
-        }
+        chatRecyclerView.adapter = ConversationAdapter(chatViewModel, onOpenChat)
+        contactsRecyclerView.adapter = ContactsAdapter(onOpenContactChat)
 
         owner.lifecycleScope.launch {
             owner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -191,14 +186,18 @@ class MainHikagable(
         // Keep service bootstrap off the main thread.  This is the same
         // persisted-account binding path used by the kernel/chat pipeline.
         owner.lifecycleScope.launch(Dispatchers.IO) {
-            val runtime = QmmeApp.sAppRuntime ?: QmmeApp.ensureRuntime()
+            val runtime = RuntimeCoordinator.currentRuntime() ?: QmmeApp.ensureRuntime()
             val kernelReady = KernelBridge.getBuddyService() != null &&
                     KernelBridge.getRecentContactService() != null
             if (!kernelReady) {
                 val bindResult = KernelBridge.bindLoggedInAccount(account.uin, account)
                 android.util.Log.i("QMME", "main: bind persisted account result=$bindResult")
             }
-            val readyRuntime = QmmeApp.sAppRuntime ?: runtime
+            val readyRuntime = RuntimeCoordinator.currentRuntime() ?: runtime
+            RuntimeCoordinator.observeLegacyMirror(
+                QmmeApp.sAppRuntime,
+                source = "MainHikagable.persistedAccountBootstrap",
+            )
             val selfAvatarPath = KernelBridge.getSelfProfileService()
                 ?.getCurrentAccountAvatarPath(account.uin)
                 .orEmpty()
@@ -307,7 +306,7 @@ class MainHikagable(
                                 PAGE_CONTACTS -> {
                                     showPage(contactsPage)
                                     boundContactsViewModel?.loadBuddies(
-                                        QmmeApp.sAppRuntime,
+                                        RuntimeCoordinator.currentRuntime(),
                                         forceRefresh = false,
                                     )
                                 }
@@ -453,7 +452,7 @@ class MainHikagable(
                         isChipIconVisible = true
                         TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_LabelLarge)
                         setOnClickListener {
-                            boundContactsViewModel?.refresh(QmmeApp.sAppRuntime)
+                            boundContactsViewModel?.refresh(RuntimeCoordinator.currentRuntime())
                         }
                     },
                 )
@@ -463,7 +462,7 @@ class MainHikagable(
             lparams = LayoutParams(widthMatchParent = true, height = 0) { weight = 1f },
             init = {
                 setOnRefreshListener {
-                    boundContactsViewModel?.refresh(QmmeApp.sAppRuntime)
+                    boundContactsViewModel?.refresh(RuntimeCoordinator.currentRuntime())
                 }
             },
         ) {

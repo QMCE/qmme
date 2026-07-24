@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import mqq.app.AppRuntime
 import rj.qmme.kernel.KernelBridge
+import rj.qmme.runtime.RuntimeCoordinator
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
@@ -107,7 +108,14 @@ class ContactsViewModel : ViewModel() {
             loadJob = viewModelScope.launch(Dispatchers.IO) {
                 try {
                     val actualRuntime = runtime
+                        ?: RuntimeCoordinator.currentRuntime()
                         ?: rj.qmme.QmmeApp.ensureRuntime()
+                    if (actualRuntime != null) {
+                        RuntimeCoordinator.observeRuntime(
+                            actualRuntime,
+                            source = "ContactsViewModel.loadBuddies",
+                        )
+                    }
                     val result = awaitBuddyService(actualRuntime)
                     if (result == null) {
                         if (generation == loadGeneration.get()) {
@@ -180,7 +188,7 @@ class ContactsViewModel : ViewModel() {
 
     fun refresh(runtime: AppRuntime? = null) {
         loadBuddies(
-            runtime = runtime ?: rj.qmme.QmmeApp.sAppRuntime,
+            runtime = runtime ?: RuntimeCoordinator.currentRuntime(),
             forceRefresh = true,
             userInitiated = true,
         )

@@ -68,9 +68,9 @@ kotlin {
 }
 
 dependencies {
-    // Keep qq-core.jar immutable. This derived runtime preserves the Watch JNI
-    // ABI. Missing QQNT types are copied as original class files from the
-    // matching Watch APK; do not reimplement com.tencent.qqnt.* in source.
+    // Keep qq-core.jar immutable. This derived runtime preserves the exact
+    // Java ABI of the matching Watch APK; do not mix the older QQMax kernel
+    // interfaces into the official Watch native stack.
     implementation(files("libs/qq-core-watch-runtime.jar"))
 
     implementation(libs.androidx.appcompat)

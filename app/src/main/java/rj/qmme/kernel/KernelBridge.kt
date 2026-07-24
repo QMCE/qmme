@@ -10,10 +10,8 @@ import com.tencent.qqnt.kernel.api.IKernelService
 import com.tencent.qqnt.kernel.api.IServletAPI
 import com.tencent.qqnt.kernel.nativeinterface.IKernelMsgService
 import com.tencent.qqnt.kernel.nativeinterface.IKernelRecentContactService
-import com.tencent.qqnt.kernel.nativeinterface.IOperateCallback
 import com.tencent.qqnt.kernel.nativeinterface.IQQNTWrapperSession
 import com.tencent.qqnt.msg.api.IMsgPushForegroundApi
-import com.tencent.qqnt.watch.contact.api.IContactRuntimeService
 import com.tencent.qqnt.watch.mainframe.api.IMsfConnHelper
 import com.tencent.qqnt.watch.mainframe.servlet.MsfConnPushServlet
 import com.tencent.qqnt.watch.selftab.api.ISelfProfileRuntimeService
@@ -21,10 +19,11 @@ import mqq.app.AppRuntime
 import mqq.app.Foreground
 import mqq.app.MobileQQ
 import mqq.app.NewIntent
+import mqq.manager.TicketManager
 import rj.qmme.QmmeApp
-import com.tencent.qqnt.kernel.api.impl.MsgService
-import com.tencent.qqnt.kernel.api.impl.RecentContactService
-import com.tencent.qqnt.kernel.api.impl.ServiceContent
+import rj.qmme.runtime.RuntimeCoordinator
+import rj.qmme.diagnostics.OfflineDiagnostics
+import rj.qmme.runtime.RuntimeSession
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "QMME"
@@ -47,6 +46,9 @@ object KernelBridge {
     private var cachedBuddyService: com.tencent.qqnt.kernel.api.IBuddyService? = null
     @Volatile
     private var cachedGroupService: com.tencent.qqnt.kernel.api.IGroupService? = null
+    /** Runtime ownership of the service cache; null means the cache is cold. */
+    @Volatile
+    private var cachedRuntimeSession: RuntimeSession? = null
     @Volatile
     private var directMsgWrapper: com.tencent.qqnt.kernel.api.IMsgService? = null
     @Volatile
@@ -58,10 +60,154 @@ object KernelBridge {
     private val officialMessageLock = Any()
     private val serviceCacheLock = Any()
 
-    fun getKernelService(): IKernelService? = cachedKs
-    fun getMsgService(): com.tencent.qqnt.kernel.api.IMsgService? = cachedMsgService
+    private fun warnIfStaleCache(source: String) {
+        val cached = cachedRuntimeSession
+        val current = RuntimeCoordinator.currentSession()
+        if (cached == null || current == null) return
+        if (cached.generation != current.generation || cached.runtime !== current.runtime) {
+            Log.w(
+                TAG,
+                "KernelBridge: stale service cache source=$source " +
+                        "cachedGeneration=${cached.generation} cachedRuntimeIdentity=${cached.runtimeIdentity} " +
+                        "currentGeneration=${current.generation} " +
+                        "currentRuntimeIdentity=${current.runtimeIdentity}",
+            )
+        }
+    }
+
+    /**
+     * A service is visible only while both the coordinator and the cache point at
+     * the same concrete AppRuntime object and generation.  A warning alone is
+     * not enough here: a late callback from a replaced runtime must not hand an
+     * old native proxy back to a screen.
+     */
+    private fun ownedCacheSession(
+        runtimeOverride: AppRuntime?,
+        source: String,
+    ): RuntimeSession? {
+        val current = RuntimeCoordinator.currentSession()
+        val requested = runtimeOverride?.let { RuntimeCoordinator.sessionFor(it) } ?: current
+        val cached = cachedRuntimeSession
+        if (current == null || requested == null || cached == null ||
+            current.generation != requested.generation || current.runtime !== requested.runtime ||
+            cached.generation != current.generation || cached.runtime !== current.runtime
+        ) {
+            warnIfStaleCache(source)
+            Log.w(
+                TAG,
+                "KernelBridge: rejecting unowned service cache source=$source " +
+                        "requestedGeneration=${requested?.generation ?: "none"} " +
+                        "cachedGeneration=${cached?.generation ?: "none"} " +
+                        "currentGeneration=${current?.generation ?: "none"}",
+            )
+            return null
+        }
+        return cached
+    }
+
+    private fun cacheSessionFor(
+        runtimeOverride: AppRuntime?,
+        source: String,
+    ): RuntimeSession? {
+        val runtime = runtimeOverride ?: RuntimeCoordinator.currentRuntime()
+        val session = if (runtime == null) {
+            RuntimeCoordinator.currentSession()
+        } else {
+            RuntimeCoordinator.sessionFor(runtime)
+        }
+        if (session == null) {
+            Log.w(
+                TAG,
+                "KernelBridge: runtime has no coordinator session source=$source " +
+                        "runtimeIdentity=${runtime?.let(System::identityHashCode) ?: "none"}",
+            )
+        }
+        return session
+    }
+
+    private fun recordCacheOwnership(
+        runtimeOverride: AppRuntime?,
+        source: String,
+    ): RuntimeSession? {
+        val session = cacheSessionFor(runtimeOverride, source)
+        val current = RuntimeCoordinator.currentSession()
+        if (session == null || current == null ||
+            session.generation != current.generation || session.runtime !== current.runtime
+        ) {
+            Log.w(
+                TAG,
+                "KernelBridge: refusing service cache ownership source=$source " +
+                        "cacheGeneration=${session?.generation ?: "none"} " +
+                        "currentGeneration=${current?.generation ?: "none"}",
+            )
+            return null
+        }
+        cachedRuntimeSession = session
+        Log.i(
+            TAG,
+            "KernelBridge: service cache ownership source=$source " +
+                    "generation=${session.generation} runtimeIdentity=${session.runtimeIdentity}",
+        )
+        return session
+    }
+
+    /** Clear every project-side proxy when a runtime is replaced or logged out. */
+    fun clearServiceCache(source: String = "clearServiceCache") {
+        synchronized(serviceCacheLock) {
+            cachedKs = null
+            cachedMsgService = null
+            cachedRecentService = null
+            cachedBuddyService = null
+            cachedGroupService = null
+            cachedRuntimeSession = null
+            directMsgWrapper = null
+            directRecentWrapper = null
+            synchronized(officialMessageLock) {
+                officialMessageKernel = null
+                officialMessageService = null
+            }
+            kernelInitCompleteNotified.set(false)
+            foregroundCallbackRegistered = false
+            msfConnectionBridgeRegistered = false
+            msfConnectionListener = null
+            foregroundReplayedSession = null
+            Log.d(TAG, "KernelBridge: service cache cleared source=$source")
+        }
+    }
+
+    private fun cachedKernelServiceFor(
+        runtime: AppRuntime?,
+        source: String,
+    ): IKernelService? {
+        if (cachedKs == null) return null
+        return ownedCacheSession(runtime, source)?.let { cachedKs }
+    }
+
+    private fun <T> cachedServiceFor(
+        service: T?,
+        runtime: AppRuntime?,
+        source: String,
+    ): T? {
+        if (service == null) return null
+        return ownedCacheSession(runtime, source)?.let { service }
+    }
+
+    fun getKernelService(): IKernelService? = cachedKernelServiceFor(
+        RuntimeCoordinator.currentRuntime(),
+        "getKernelService",
+    )
+
+    fun getMsgService(): com.tencent.qqnt.kernel.api.IMsgService? = cachedServiceFor(
+        cachedMsgService,
+        RuntimeCoordinator.currentRuntime(),
+        "getMsgService",
+    )
     fun getKernelMsgService(): IKernelMsgService? = runCatching {
-        val kernelService = cachedKs ?: return@runCatching null
+        warnIfStaleCache("getKernelMsgService")
+        val kernelService = cachedKernelServiceFor(
+            runtime = RuntimeCoordinator.currentRuntime(),
+            source = "getKernelMsgService",
+        ) ?: return@runCatching null
         val wrapperSession = kernelService.javaClass
             .getDeclaredField("wrapperSession")
             .apply { isAccessible = true }
@@ -69,7 +215,11 @@ object KernelBridge {
         wrapperSession?.msgService
     }.getOrNull()
     fun getRecentContactService(): com.tencent.qqnt.kernel.api.IRecentContactService? =
-        cachedRecentService
+        cachedServiceFor(
+            cachedRecentService,
+            RuntimeCoordinator.currentRuntime(),
+            "getRecentContactService",
+        )
 
     /**
      * Re-read the Java service wrappers after NT startup.  KernelServiceImpl
@@ -81,27 +231,41 @@ object KernelBridge {
      */
     fun refreshCoreServices(runtimeOverride: AppRuntime? = null): Boolean {
         val runtime = runtimeOverride ?: QmmeApp.ensureRuntime()
-        val kernelService = cachedKs ?: runCatching {
+        val kernelService = cachedKernelServiceFor(runtime, "refreshCoreServices") ?: runCatching {
             runtime?.getRuntimeService(IKernelService::class.java, "")
         }.getOrNull()
         if (kernelService == null) return false
-        cacheServices(kernelService)
-        return cachedMsgService != null && cachedRecentService != null
+        cacheServices(kernelService, runtime, "refreshCoreServices")
+        return cachedServiceFor(cachedMsgService, runtime, "refreshCoreServices.msg") != null &&
+                cachedServiceFor(cachedRecentService, runtime, "refreshCoreServices.recent") != null
     }
 
     /** True when a Java BaseService has a live native service behind it. */
     fun isNativeServiceReady(service: Any?): Boolean = hasNativeService(service)
 
-    fun getBuddyService(): com.tencent.qqnt.kernel.api.IBuddyService? = cachedBuddyService
-    fun getGroupService(): com.tencent.qqnt.kernel.api.IGroupService? = cachedGroupService
+    fun getBuddyService(): com.tencent.qqnt.kernel.api.IBuddyService? = cachedServiceFor(
+        cachedBuddyService,
+        RuntimeCoordinator.currentRuntime(),
+        "getBuddyService",
+    )
+
+    fun getGroupService(): com.tencent.qqnt.kernel.api.IGroupService? = cachedServiceFor(
+        cachedGroupService,
+        RuntimeCoordinator.currentRuntime(),
+        "getGroupService",
+    )
     fun ensureOfficialMessageBridge(
         runtimeOverride: AppRuntime? = null,
     ): com.tencent.qqnt.msg.api.IMsgService? {
         val runtime = runtimeOverride ?: QmmeApp.ensureRuntime()
-        val kernelService = cachedKs ?: runCatching {
+        val kernelService = cachedKernelServiceFor(runtime, "ensureOfficialMessageBridge") ?: runCatching {
             runtime?.getRuntimeService(IKernelService::class.java, "")
         }.getOrNull()
-        val kernelMsgService = cachedMsgService ?: runCatching {
+        val kernelMsgService = cachedServiceFor(
+            cachedMsgService,
+            runtime,
+            "ensureOfficialMessageBridge.cached",
+        ) ?: runCatching {
             kernelService?.getMsgService()
         }.getOrNull() ?: return null
 
@@ -137,12 +301,14 @@ object KernelBridge {
         val deadline = System.currentTimeMillis() + timeoutMillis
         while (System.currentTimeMillis() < deadline) {
             val runtime = runtimeOverride ?: QmmeApp.ensureRuntime()
-            val kernelService = cachedKs ?: runCatching {
+            val kernelService = cachedKernelServiceFor(runtime, "awaitCoreServices") ?: runCatching {
                 runtime?.getRuntimeService(IKernelService::class.java, "")
             }.getOrNull()
             if (kernelService != null) {
-                cacheServices(kernelService)
-                if (cachedMsgService != null && cachedRecentService != null) {
+                cacheServices(kernelService, runtime, "awaitCoreServices")
+                if (cachedServiceFor(cachedMsgService, runtime, "awaitCoreServices.msg") != null &&
+                    cachedServiceFor(cachedRecentService, runtime, "awaitCoreServices.recent") != null
+                ) {
                     Log.d(TAG, "KernelBridge: core services ready")
                     return true
                 }
@@ -165,17 +331,21 @@ object KernelBridge {
         val deadline = System.currentTimeMillis() + timeoutMillis
         while (System.currentTimeMillis() < deadline) {
             val runtime = runtimeOverride ?: QmmeApp.ensureRuntime()
-            val kernelService = cachedKs ?: runCatching {
+            val kernelService = cachedKernelServiceFor(runtime, "awaitGroupService") ?: runCatching {
                 runtime?.getRuntimeService(IKernelService::class.java, "")
             }.getOrNull()
             if (kernelService != null) {
-                cacheServices(kernelService)
-                cachedGroupService?.let { return it }
+                cacheServices(kernelService, runtime, "awaitGroupService")
+                cachedServiceFor(cachedGroupService, runtime, "awaitGroupService")?.let { return it }
             }
             Thread.sleep(250)
         }
         Log.w(TAG, "KernelBridge: timed out waiting for group service")
-        return cachedGroupService
+        return cachedServiceFor(
+            cachedGroupService,
+            runtimeOverride ?: RuntimeCoordinator.currentRuntime(),
+            "awaitGroupService.timeout",
+        )
     }
 
     /** bind 完成后由 waitForSession 调用，缓存各子 service.
@@ -186,7 +356,15 @@ object KernelBridge {
      * second time while the NTSdk thread is still finishing startup and were
      * the last operation before the stack-corruption abort.
      */
-    private fun cacheServices(ks: IKernelService) = synchronized(serviceCacheLock) {
+    private fun cacheServices(
+        ks: IKernelService,
+        runtimeOverride: AppRuntime? = null,
+        source: String = "cacheServices",
+    ) = synchronized(serviceCacheLock) {
+        if (recordCacheOwnership(runtimeOverride, source) == null) {
+            clearServiceCache("reject:$source")
+            return@synchronized
+        }
         cachedKs = ks
         completeExistingKernelInit(ks)
 
@@ -217,73 +395,10 @@ object KernelBridge {
             TAG,
             "KernelBridge: cached services — ks=$cachedKs, msg=$cachedMsgService, " +
                     "recent=$cachedRecentService, buddy=$cachedBuddyService, " +
-                    "state=${kernelState(ks)}"
+                    "group=$cachedGroupService, state=${kernelState(ks)}, " +
+                    "cacheGeneration=${cachedRuntimeSession?.generation ?: "none"}, " +
+                    "cacheRuntimeIdentity=${cachedRuntimeSession?.runtimeIdentity ?: "none"}",
         )
-    }
-
-    /** Return the direct wrapper session without forcing a KernelService lazy. */
-    private fun wrapperSession(ks: IKernelService): IQQNTWrapperSession? {
-        return runCatching {
-            val impl = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelServiceImpl")
-            impl.getDeclaredField("wrapperSession").apply { isAccessible = true }
-                .get(ks) as? IQQNTWrapperSession
-        }.getOrNull()
-    }
-
-    /**
-     * KernelServiceImpl can eagerly cache MsgService around a null native
-     * pointer.  Build a fresh public service wrapper from the direct native
-     * wrapper when that happens; ClearableLazy.clear() is destructive and must
-     * not be used as a retry mechanism.
-     */
-    private fun liveMsgService(
-        ks: IKernelService,
-        candidate: com.tencent.qqnt.kernel.api.IMsgService?,
-        native: IKernelMsgService?,
-    ): com.tencent.qqnt.kernel.api.IMsgService? {
-        if (candidate != null && hasNativeService(candidate)) {
-            directMsgWrapper = candidate
-            return candidate
-        }
-        if (native == null || !hasNativeHandle(native)) return null
-        directMsgWrapper?.let { cached ->
-            if (sameNativeDelegate(nativeDelegate(cached), native) && hasNativeService(cached)) return cached
-        }
-        return runCatching {
-            val content = serviceContent(ks) ?: return@runCatching null
-            MsgService(native, content).also { directMsgWrapper = it }
-        }.onFailure {
-            Log.w(TAG, "KernelBridge: direct MsgService wrapper failed", it)
-        }.getOrNull()
-    }
-
-    private fun liveRecentService(
-        ks: IKernelService,
-        candidate: com.tencent.qqnt.kernel.api.IRecentContactService?,
-        native: IKernelRecentContactService?,
-    ): com.tencent.qqnt.kernel.api.IRecentContactService? {
-        if (candidate != null && hasNativeService(candidate)) {
-            directRecentWrapper = candidate
-            return candidate
-        }
-        if (native == null || !hasNativeHandle(native)) return null
-        directRecentWrapper?.let { cached ->
-            if (sameNativeDelegate(nativeDelegate(cached), native) && hasNativeService(cached)) return cached
-        }
-        return runCatching {
-            val content = serviceContent(ks) ?: return@runCatching null
-            RecentContactService(native, content).also { directRecentWrapper = it }
-        }.onFailure {
-            Log.w(TAG, "KernelBridge: direct RecentContactService wrapper failed", it)
-        }.getOrNull()
-    }
-
-    private fun serviceContent(ks: IKernelService): ServiceContent? {
-        return runCatching {
-            val impl = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelServiceImpl")
-            impl.getDeclaredField("serviceContent").apply { isAccessible = true }
-                .get(ks) as? ServiceContent
-        }.getOrNull()
     }
 
     private fun nativeDelegate(service: Any?): Any? {
@@ -398,90 +513,127 @@ object KernelBridge {
             val app = MobileQQ.sMobileQQ ?: return "MobileQQ null"
             runCatching { app.setLastLoginUin(uin) }
             runCatching { app.setSortAccountList(arrayListOf(account)) }
-            val runtime = QmmeApp.ensureRuntime(app)
-            Log.d(
-                TAG,
-                "bind: runtime=$runtime, isLogin=${runtime?.isLogin()}, uin=${runtime?.currentUin}"
-            )
-            // AppRuntime.login(SimpleAccount) is not a local setter: it posts
-            // MobileQQ.createNewRuntime(), which logs out/replaces the current
-            // WatchAppInterface.  On a cold start the official runtime may already
-            // be logged in with this exact account, so replaying login here causes a
-            // runtime switch and can make MobileQQ terminate the process.  Only ask
-            // MobileQQ to create a runtime when the account is actually different.
-            val runtimeUin = runCatching { runtime?.currentUin }.getOrNull().orEmpty()
-            val alreadyBound = runtime?.isLogin() == true && runtimeUin == uin
-            if (runtime != null && !alreadyBound) {
-                runCatching { runtime.login(account) }
-                runCatching { runtime.setLogined() }
-                Log.d(TAG, "bind: login requested for uin=$uin, oldUin=$runtimeUin")
-            } else {
-                Log.d(
-                    TAG,
-                    "bind: login skipped; same logged-in account=$alreadyBound " +
-                            "runtimeUin=$runtimeUin requestedUin=$uin"
-                )
-            }
-            Log.d(
-                TAG,
-                "bind: after account bind, isLogin=${runtime?.isLogin()}, uin=${runtime?.currentUin}"
-            )
 
-            injectSAccountModule()
+            val initialRuntime = QmmeApp.ensureRuntime(app)
+            RuntimeCoordinator.markAccountBinding(
+                runtime = initialRuntime,
+                uin = uin,
+                source = "KernelBridge.bindLoggedInAccount",
+            )
+            val initialUin = runCatching { initialRuntime?.currentUin }.getOrNull().orEmpty()
+            val alreadyBound = initialRuntime?.isLogin() == true && initialUin == uin
+            val runtime = if (alreadyBound) {
+                initialRuntime
+            } else {
+                // AppRuntime.login() posts MobileQQ.createNewRuntime() to the
+                // runtime handler. It is not a local field setter; never mark
+                // the old object logged in or start KernelService on it.
+                initialRuntime?.login(account)
+                awaitRuntimeForAccount(app, initialRuntime, uin)
+            }
+
+            if (runtime == null) {
+                RuntimeCoordinator.markFailed(
+                    runtime = RuntimeCoordinator.currentRuntime(),
+                    source = "KernelBridge.bindLoggedInAccount",
+                    reason = "official runtime switch did not publish in time",
+                )
+                return "runtime switch pending"
+            }
+            RuntimeCoordinator.markAccountBound(
+                runtime = runtime,
+                uin = uin,
+                source = "KernelBridge.bindLoggedInAccount",
+            )
+            Log.d(
+                TAG,
+                "bind: active runtimeIdentity=${System.identityHashCode(runtime)} " +
+                        "isLogin=${runCatching { runtime.isLogin() }.getOrDefault(false)} " +
+                        "uin=${RuntimeCoordinator.redactUin(runtime.currentUin)} " +
+                        "reused=$alreadyBound",
+            )
 
             checkTicketStatus(runtime, uin)
-
+            if (!awaitLoginTicketReady(runtime, uin)) {
+                RuntimeCoordinator.markFailed(
+                    runtime = runtime,
+                    source = "KernelBridge.bindLoggedInAccount",
+                    reason = "TicketManager login ticket not ready",
+                )
+                return "login ticket not ready"
+            }
             val ks = runCatching {
-                runtime?.getRuntimeService(IKernelService::class.java, "")
+                runtime.getRuntimeService(IKernelService::class.java, "")
             }.getOrNull()
-            Log.d(TAG, "bind: kernelService=$ks")
+            Log.d(TAG, "bind: kernelService=$ks runtime=${System.identityHashCode(runtime)}")
+            if (ks == null) return "kernel service unavailable"
 
-            // createRuntime 里已经自动继承登录态，不用再调 waitAppRuntime 拿新实例
-            val actualRuntime = runtime
-            pinRuntime(actualRuntime)
-
-            if (ks != null) {
-                val existingSession = runCatching {
-                    val f = ks.javaClass.getDeclaredField("wrapperSession"); f.isAccessible =
-                    true; f.get(ks)
-                }.getOrNull()
-                Log.d(TAG, "bind: existingSession=$existingSession")
-                if (existingSession == null) {
-                    // pinRuntime 已在上面完成，先 patch serviceContent 再 start
-                    patchServiceContent(ks, actualRuntime ?: runtime)
-                    startKernelSession(ks, actualRuntime)
-                } else {
-                    Log.d(TAG, "bind: session already exists, initializing directly")
-                    initExistingKernel(actualRuntime, ks)
-                }
+            RuntimeCoordinator.markKernelStarting(
+                runtime = runtime,
+                source = "KernelBridge.bindLoggedInAccount",
+            )
+            val existingSession = runCatching { ks.getWrapperSession() }.getOrNull()
+            Log.d(TAG, "bind: existingSession=$existingSession")
+            if (existingSession == null) {
+                if (!startKernelSession(ks, runtime)) return "kernel start failed"
+            } else {
+                Log.d(TAG, "bind: session already exists, reusing without runtime patch")
+                initExistingKernel(runtime, ks)
             }
 
-            waitForSession(ks)
-            val ready = reinitializeAfterLogin(actualRuntime)
+            waitForSession(ks, runtime)
+            val ready = reinitializeAfterLogin(runtime)
             if (!ready) {
                 Log.w(TAG, "bind: kernel session started but core services are not ready")
                 "kernel services unavailable"
             } else {
                 "ok"
             }
-        }.getOrElse { "failed: ${it.javaClass.simpleName}: ${it.message}" }
+        }.getOrElse {
+            RuntimeCoordinator.markFailed(
+                runtime = RuntimeCoordinator.currentRuntime(),
+                source = "KernelBridge.bindLoggedInAccount",
+                reason = "${it.javaClass.simpleName}: ${it.message}",
+            )
+            "failed: ${it.javaClass.simpleName}: ${it.message}"
+        }
+    }
+
+    private fun awaitRuntimeForAccount(
+        app: MobileQQ,
+        previous: AppRuntime?,
+        uin: String,
+        timeoutMillis: Long = 15_000L,
+    ): AppRuntime? {
+        val deadline = System.currentTimeMillis() + timeoutMillis
+        while (System.currentTimeMillis() < deadline) {
+            val candidate = runCatching { app.peekAppRuntime() }.getOrNull()
+            if (candidate != null && candidate !== previous) {
+                QmmeApp.sAppRuntime = candidate
+                RuntimeCoordinator.observeRuntime(
+                    candidate,
+                    source = "KernelBridge.awaitRuntimeForAccount",
+                )
+                val candidateUin = runCatching { candidate.currentUin }.getOrNull().orEmpty()
+                val candidateLoggedIn = runCatching { candidate.isLogin() }.getOrDefault(false)
+                if (candidateUin == uin && candidateLoggedIn) return candidate
+            }
+            Thread.sleep(100L)
+        }
+        return null
     }
 
     fun reinitializeAfterLogin(runtime: AppRuntime?): Boolean {
-        cachedKs = null
-        cachedMsgService = null
-        synchronized(officialMessageLock) {
-            officialMessageKernel = null
-            officialMessageService = null
-        }
-        cachedRecentService = null
-        cachedBuddyService = null
-        directMsgWrapper = null
-        directRecentWrapper = null
+        clearServiceCache("reinitializeAfterLogin")
 
         val coreReady = awaitCoreServices(runtimeOverride = runtime)
         if (!coreReady) {
             Log.w(TAG, "login reinitialize: core services unavailable")
+            RuntimeCoordinator.markFailed(
+                runtime = runtime,
+                source = "KernelBridge.reinitializeAfterLogin",
+                reason = "core services unavailable",
+            )
             return false
         }
 
@@ -500,262 +652,288 @@ object KernelBridge {
             Log.d(TAG, "login reinitialize: ON_KERNEL_INIT_COMPLETE sent")
         }.onFailure { Log.w(TAG, "login reinitialize: init broadcast failed", it) }
 
-        return cachedMsgService != null && cachedRecentService != null
-    }
-
-    @Volatile
-    private var nativeKernelLibrariesLoaded = false
-
-
-    /** 锁定 mAppRuntime 字段 + serviceContent 里的 runtime，
-     *  防止 waitAppRuntime 创建新未初始化实例替换 */
-    private fun pinRuntime(runtime: AppRuntime?) {
-        if (runtime == null) return
-
-        // createRuntime() may be called by MobileQQ while login callbacks are running.
-        // Keep the runtime that owns the KernelService we are about to start as the
-        // application-wide source of truth as well.
-        QmmeApp.sAppRuntime = runtime
-
-        // 1. MobileQQ.mAppRuntime
-        runCatching {
-            val f = MobileQQ::class.java.getDeclaredField("mAppRuntime")
-            f.isAccessible = true
-            val current = f.get(MobileQQ.sMobileQQ)
-            if (current !== runtime) {
-                f.set(MobileQQ.sMobileQQ, runtime)
-                Log.d(TAG, "bind: pinned mAppRuntime: $current -> $runtime")
-            }
-            val stateField = MobileQQ::class.java.getDeclaredField("mRuntimeState")
-            stateField.isAccessible = true
-            (stateField.get(MobileQQ.sMobileQQ) as? java.util.concurrent.atomic.AtomicInteger)?.set(
-                3
+        val ready = cachedServiceFor(cachedMsgService, runtime, "reinitializeAfterLogin.msg") != null &&
+                cachedServiceFor(cachedRecentService, runtime, "reinitializeAfterLogin.recent") != null
+        if (ready) {
+            RuntimeCoordinator.markKernelReady(
+                runtime = runtime,
+                source = "KernelBridge.reinitializeAfterLogin",
             )
-        }.onFailure { Log.e(TAG, "bind: pinRuntime mAppRuntime failed", it) }
-
-        // 2. KernelServiceImpl.serviceContent 里的 WeakReference<AppRuntime>
-        runCatching {
-            val ks =
-                runtime?.getRuntimeService(IKernelService::class.java, "") ?: return@runCatching
-            val ksImplCls = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelServiceImpl")
-            val scField = ksImplCls.getDeclaredField("serviceContent"); scField.isAccessible = true
-            val sc = scField.get(ks)
-            if (sc != null) {
-                val aField = sc.javaClass.getDeclaredField("a"); aField.isAccessible = true
-                val weakRef = aField.get(sc)
-                if (weakRef != null) {
-                    setWeakRefReferent(weakRef, runtime)
-                    Log.d(TAG, "bind: pinned serviceContent runtime -> $runtime")
-                }
-            }
-        }.onFailure { Log.e(TAG, "bind: pinRuntime serviceContent failed", it) }
-    }
-
-    /** 在 ks.start() 之前 patch serviceContent WeakReference，
-     *  确保 native startServlet 拿到已初始化的 runtime */
-    private fun patchServiceContent(ks: IKernelService, runtime: AppRuntime?) {
-        runCatching {
-            val ksImplCls = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelServiceImpl")
-            val scField = ksImplCls.getDeclaredField("serviceContent"); scField.isAccessible = true
-            val sc = scField.get(ks) ?: return@runCatching
-            val aField = sc.javaClass.getDeclaredField("a"); aField.isAccessible = true
-            val weakRef = aField.get(sc) ?: return@runCatching
-            setWeakRefReferent(weakRef, runtime)
-            Log.d(
-                TAG,
-                "patchServiceContent: set runtime=$runtime, isLogin=${runtime?.isLogin()}, isRunning=${runtime?.isRunning}"
-            )
-        }.onFailure { Log.e(TAG, "patchServiceContent failed", it) }
-    }
-
-    /** ART 上 WeakReference 继承 Object，referent 在 ART 内部类中，需要遍历所有字段 */
-    private fun setWeakRefReferent(weakRef: Any, value: Any?) {
-        var cls: Class<*>? = weakRef.javaClass
-        while (cls != null) {
-            val fields = runCatching { cls.declaredFields }.getOrNull()
-            if (fields != null) {
-                for (f in fields) {
-                    if (f.name == "referent" || f.type == AppRuntime::class.java || f.type == Any::class.java) {
-                        f.isAccessible = true
-                        val current = f.get(weakRef)
-                        if (current != null && current is AppRuntime) {
-                            if (current !== value) {
-                                f.set(weakRef, value)
-                                Log.d(
-                                    TAG,
-                                    "setWeakRefReferent: patched field '${f.name}' in ${cls.simpleName}"
-                                )
-                            }
-                            return
-                        }
-                    }
-                }
-            }
-            cls = cls.superclass
         }
-        Log.w(TAG, "setWeakRefReferent: could not find referent field")
+        return ready
     }
 
-    private fun injectSAccountModule() {
-        runCatching {
-            val ksImplCls = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelServiceImpl")
-            val sAccountModuleField = ksImplCls.getDeclaredField("sAccountModule")
-            sAccountModuleField.isAccessible = true
-            if (sAccountModuleField.get(null) == null) {
-                val accountModuleCls =
-                    Class.forName("com.tencent.qqnt.watch.inject.AccountModuleInjector")
-                val accountModule = accountModuleCls.getDeclaredConstructor().newInstance()
-                sAccountModuleField.set(null, accountModule)
-                Log.d(TAG, "bind: sAccountModule set to $accountModule")
+    private data class LoginTicketReadiness(
+        val managerPresent: Boolean,
+        val a2Length: Int,
+        val d2Length: Int,
+        val d2KeyLength: Int,
+    ) {
+        val ready: Boolean
+            get() = managerPresent && a2Length > 0 && d2Length > 0 && d2KeyLength > 0
+
+        fun diagnostics(): String =
+            "managerPresent=$managerPresent a2Len=$a2Length d2Len=$d2Length d2KeyLen=$d2KeyLength"
+    }
+
+    /**
+     * MobileQQ publishes the replacement AppRuntime before every account
+     * manager has necessarily finished restoring its cached tickets. Starting
+     * NT against that half-ready runtime lets SenderModule hand native startup
+     * an empty SessionTicket; the observed result is an immediate
+     * onUserTokenExpired(expired) followed by the startup crash. Gate startup
+     * on the same TicketManager source used by the official SenderModule.
+     */
+    private fun awaitLoginTicketReady(
+        runtime: AppRuntime,
+        uin: String,
+        timeoutMillis: Long = 15_000L,
+    ): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMillis
+        var last = LoginTicketReadiness(false, 0, 0, 0)
+        while (System.currentTimeMillis() < deadline) {
+            if (!RuntimeCoordinator.isCurrent(runtime)) break
+            last = readLoginTicketReadiness(runtime, uin)
+            if (last.ready) {
+                val details = "runtimeIdentity=${System.identityHashCode(runtime)} ${last.diagnostics()}"
+                Log.i(TAG, "bind: login ticket ready $details")
+                OfflineDiagnostics.record(
+                    runtime.applicationContext,
+                    "login_ticket_ready",
+                    details,
+                )
+                return true
             }
-        }.onFailure { Log.e(TAG, "bind: set sAccountModule failed", it) }
+            Thread.sleep(100L)
+        }
+        val details = "runtimeIdentity=${System.identityHashCode(runtime)} ${last.diagnostics()}"
+        Log.e(TAG, "bind: login ticket readiness timed out $details")
+        OfflineDiagnostics.record(
+            runtime.applicationContext,
+            "login_ticket_timeout",
+            details,
+        )
+        return false
+    }
+
+    private fun readLoginTicketReadiness(runtime: AppRuntime, uin: String): LoginTicketReadiness {
+        val manager = runCatching {
+            runtime.getManager(AppRuntime.TICKET_MANAGER) as? TicketManager
+        }.onFailure { Log.d(TAG, "bind: TicketManager probe failed", it) }.getOrNull()
+            ?: return LoginTicketReadiness(false, 0, 0, 0)
+        val a2 = runCatching { manager.getA2(uin) }
+            .onFailure { Log.d(TAG, "bind: TicketManager A2 probe failed", it) }
+            .getOrNull()
+        val d2 = runCatching { manager.getD2Ticket(uin) }
+            .onFailure { Log.d(TAG, "bind: TicketManager D2 probe failed", it) }
+            .getOrNull()
+        return LoginTicketReadiness(
+            managerPresent = true,
+            a2Length = a2?.length ?: 0,
+            d2Length = d2?._sig?.size?.times(2) ?: 0,
+            d2KeyLength = d2?._sig_key?.size?.times(2) ?: 0,
+        )
     }
 
     private fun checkTicketStatus(runtime: AppRuntime?, uin: String) {
         runCatching {
             val ticketClass =
                 Class.forName("com.tencent.qqnt.account.login.api.ITicketRuntimeService")
-            val m = runtime?.javaClass?.methods?.firstOrNull {
-                it.name == "getRuntimeService" && it.parameterTypes.size == 2
-            }
-            val ticketSvc = m?.invoke(runtime, ticketClass, "")
-            Log.d(TAG, "bind: ticketSvc=$ticketSvc")
-            if (ticketSvc != null) {
-                val a2 = runCatching {
-                    ticketSvc.javaClass.getMethod("getA2", String::class.java)
-                        .invoke(ticketSvc, uin)
-                }.getOrNull()
-                Log.d(TAG, "bind: A2=$a2")
-                val localTicket = runCatching {
-                    ticketSvc.javaClass.getMethod(
+            val ticketService = runCatching {
+                runtime?.javaClass?.methods?.firstOrNull {
+                    it.name == "getRuntimeService" && it.parameterTypes.size == 2
+                }?.invoke(runtime, ticketClass, "")
+            }.getOrNull()
+            Log.d(TAG, "bind: ticket service present=${ticketService != null}")
+            if (ticketService != null) {
+                runCatching {
+                    ticketService.javaClass.getMethod("getA2", String::class.java)
+                        .invoke(ticketService, uin)
+                }.onFailure { Log.d(TAG, "bind: A2 probe unavailable", it) }
+                runCatching {
+                    ticketService.javaClass.getMethod(
                         "getLocalTicket",
                         String::class.java,
-                        Int::class.javaPrimitiveType
-                    )
-                        .invoke(ticketSvc, uin, 262144)
-                }.getOrNull()
-                Log.d(TAG, "bind: localTicket=$localTicket")
+                        Int::class.javaPrimitiveType,
+                    ).invoke(ticketService, uin, 262144)
+                }.onFailure { Log.d(TAG, "bind: local ticket probe unavailable", it) }
             }
-        }.onFailure { Log.e(TAG, "bind: ticket check failed", it) }
+        }.onFailure { Log.w(TAG, "bind: ticket check failed", it) }
+    }
+
+    private val nativeKernelLibraryLock = Any()
+    @Volatile
+    private var nativeKernelLibrariesLoaded = false
+
+    /**
+     * Load the Watch NT JNI dependency chain explicitly before KernelService.start.
+     * The old path relied on KernelSetterImpl's static initializer and could call
+     * startup JNI before the exported CppProxy symbol was visible.
+     */
+    private fun ensureNativeKernelLibraries(): Boolean {
+        if (nativeKernelLibrariesLoaded) return true
+        synchronized(nativeKernelLibraryLock) {
+            if (nativeKernelLibrariesLoaded) return true
+            val libraries = listOf(
+                "basic_share",
+                "djinni_support_lib",
+                "module_service",
+                "djinni_interface_core_public",
+                // Official Watch KernelSetterImpl loads the logical "gpro"
+                // module here; InitialModuleInjector maps it to gprowrapper.
+                // A DT_NEEDED edge may map libgprowrapper.so as a dependency,
+                // but it does not replace this Java loadLibrary call and its
+                // JNI_OnLoad initialization. Starting libstartup against the
+                // merely-mapped library leaves its timer/scheduler globals null
+                // and crashes in TimerBase::PostNewScheduledTask.
+                "gprowrapper",
+                // libstartup.so has a DT_NEEDED reference to the exported
+                // INTSessionShell factory in libwrapper.so.  The official
+                // startup path loads wrapper before startup; omitting it makes
+                // Android's linker reject libstartup with a missing C++ symbol.
+                "wrapper",
+                // The project previously bundled QQMax's old libkernel.so.
+                // Official Watch 9.0.7 maps the kernel module to libwrapper.so;
+                // loading both exports the same CppProxy JNI symbols and can
+                // bind Java calls to the incompatible old implementation.
+                "startup",
+            )
+            return try {
+                libraries.forEach { library ->
+                    System.loadLibrary(library)
+                    Log.d(TAG, "KernelBridge: loaded lib$library.so")
+                    OfflineDiagnostics.record(
+                        RuntimeCoordinator.currentRuntime()?.applicationContext,
+                        "native_library_loaded",
+                        "library=$library",
+                    )
+                }
+                val runtime = RuntimeCoordinator.currentRuntime()
+                val context = runtime?.applicationContext
+                if (runtime == null || context == null || !ProjectKernelBootstrap.initialize(context, runtime)) {
+                    Log.e(TAG, "KernelBridge: project wrapper-engine bootstrap failed")
+                    false
+                } else {
+                    nativeKernelLibrariesLoaded = true
+                    true
+                }
+            } catch (error: Throwable) {
+                // Do not mark the chain loaded after a partial failure. A later
+                // retry can safely re-enter System.loadLibrary for already loaded
+                // names and continue from the missing dependency.
+                Log.e(TAG, "KernelBridge: native kernel library chain failed", error)
+                false
+            }
+        }
     }
 
     /**
-     * Starts the already-created KernelService without instantiating KernelSetterImpl.
-     *
-     * KernelSetterImpl's static initializer owns the original QQ InitialModule loader.
-     * That loader is tied to the watch APK's native namespace and eagerly loads the
-     * whole wrapper/startup stack.  In this app it can terminate the process from a
-     * static initializer when the exported wrapper symbol is not visible to
-     * libstartup.so.  KernelServiceImpl.start() is the actual session entry point and
-     * already initializes its own AppSetting/Business/Sender modules in its
-     * constructor, so the setter is not needed here.
+     * Start the already-created KernelService directly. This is the project
+     * bridge: it does not construct KernelSetterImpl, call ensureInject(), patch
+     * serviceContent, or install an official account callback.
      */
-    /**
-     * Start the official QQ Watch kernel path.  The Watch Java API and
-     * libwrapper/libgprowrapper are one ABI; bypassing KernelSetterImpl and
-     * calling qmce's IQQNTWrapperSession.CppProxy.startNT() is not compatible
-     * and is the direct cause of the native stack-corruption abort.
-     */
-    private fun startKernelSession(ks: IKernelService, runtime: AppRuntime?) {
+    private fun startKernelSession(ks: IKernelService, runtime: AppRuntime?): Boolean {
         val boundRuntime = runtime ?: run {
             Log.e(TAG, "bind: cannot start kernel session without runtime")
-            return
+            return false
         }
-        val setter = runCatching {
-            val setterClass = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelSetterImpl")
-            setterClass.getDeclaredConstructor().apply { isAccessible = true }.newInstance()
-        }.onFailure { Log.e(TAG, "bind: create official KernelSetterImpl failed", it) }
-            .getOrNull() ?: return
+        if (!RuntimeCoordinator.isCurrent(boundRuntime)) {
+            Log.w(TAG, "bind: refusing to start kernel on stale runtime")
+            return false
+        }
+        if (!ensureNativeKernelLibraries()) return false
 
         runCatching {
-            val appRef = setter.javaClass.getDeclaredField("mAppRef")
-            appRef.isAccessible = true
-            val weakReferenceClass = Class.forName("mqq.util.WeakReference")
-            appRef.set(
-                setter,
-                weakReferenceClass.getDeclaredConstructor(Any::class.java)
-                    .newInstance(boundRuntime),
-            )
-        }.onFailure { Log.w(TAG, "bind: set KernelSetterImpl.mAppRef failed", it) }
-
-        runCatching {
-            setter.javaClass.getMethod("ensureInject").invoke(setter)
-        }.onFailure { Log.w(TAG, "bind: official KernelSetterImpl.ensureInject failed", it) }
-
-        // The original setter reads this injector when constructing its native
-        // session.  Inject it explicitly because the curated application does
-        // not run the original QQ startup task graph.
-        runCatching {
-            val setterClass = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelSetterImpl")
-            val appSettingField = setterClass.getDeclaredField("sAppSetting")
-            appSettingField.isAccessible = true
-            if (appSettingField.get(null) == null) {
-                val injector = Class.forName("com.tencent.qqnt.watch.inject.AppSettingInjector")
-                    .getDeclaredConstructor()
-                    .newInstance()
-                appSettingField.set(null, injector)
-                Log.d(TAG, "bind: official AppSettingInjector injected=$injector")
+            val impl = ks as? com.tencent.qqnt.kernel.api.impl.KernelServiceImpl
+            if (impl == null) {
+                Log.e(TAG, "bind: KernelService is not the expected Watch implementation: $ks")
+                return false
             }
-        }.onFailure { Log.w(TAG, "bind: official AppSettingInjector injection failed", it) }
+            ProjectKernelDependencies.install(impl, boundRuntime)
+        }.onFailure {
+            Log.e(TAG, "bind: project kernel dependency installation failed", it)
+            return false
+        }
 
         kernelInitCompleteNotified.set(false)
-        val listener = java.lang.reflect.Proxy.newProxyInstance(
-            Class.forName("com.tencent.qqnt.kernel.api.IKernelCreateListener").classLoader,
-            arrayOf(Class.forName("com.tencent.qqnt.kernel.api.IKernelCreateListener")),
-        ) { _, method, _ ->
-            when (method.name) {
-                "a" -> {
-                    Log.d(TAG, "IKernelCreateListener.a called (official kernel created)")
-                    runCatching {
-                        setter.javaClass.getMethod("setServletKernelInit").invoke(setter)
-                        Log.d(TAG, "official setServletKernelInit OK")
-                    }.onFailure { Log.w(TAG, "official setServletKernelInit failed", it) }
-                    null
-                }
+        val listener = object : IKernelCreateListener {
+            // Kotlin metadata in the Watch jar exposes descriptive names, while
+            // the shipped JVM interface retains the obfuscated a/b symbols.
+            // Implement both surfaces: native/JNI dispatches a/b directly.
+            override fun onKernelSessionCreated(callbackRuntime: AppRuntime) {
+                handleKernelSessionCreated(callbackRuntime)
+            }
 
-                "b" -> {
-                    if (!kernelInitCompleteNotified.compareAndSet(false, true)) {
-                        Log.d(TAG, "IKernelCreateListener.b ignored (already completed)")
-                        null
-                    } else {
-                        Log.d(TAG, "IKernelCreateListener.b called (official kernel init complete)")
-                        registerDirectMsfConnectionBridge(boundRuntime)
-                        registerOfficialForegroundCallback(boundRuntime)
-                        initializeOfficialMessageBridge(boundRuntime)
-                        Log.d(TAG, "kernel init: skip incompatible contact refresh")
-                        runCatching {
-                            val context = com.tencent.qphone.base.util.BaseApplication.getContext()
-                            context.sendBroadcast(
-                                android.content.Intent("com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE")
-                                    .setPackage(context.packageName),
-                            )
-                            Log.d(TAG, "ON_KERNEL_INIT_COMPLETE broadcast sent")
-                        }.onFailure { Log.w(TAG, "sendBroadcast failed", it) }
-                        null
-                    }
-                }
+            override fun onKernelInitComplete(callbackRuntime: AppRuntime) {
+                handleKernelInitComplete(callbackRuntime)
+            }
 
-                "hashCode" -> 42
-                "equals" -> false
-                "toString" -> "QMME-OfficialKernelCreateListener"
-                else -> null
+            fun a(callbackRuntime: AppRuntime) {
+                handleKernelSessionCreated(callbackRuntime)
+            }
+
+            fun b(callbackRuntime: AppRuntime) {
+                handleKernelInitComplete(callbackRuntime)
+            }
+
+            private fun handleKernelSessionCreated(callbackRuntime: AppRuntime) {
+                if (!RuntimeCoordinator.isCurrent(boundRuntime)) {
+                    Log.w(TAG, "bind: kernel created callback belongs to stale runtime")
+                    return
+                }
+                Log.d(
+                    TAG,
+                    "bind: project IKernelCreateListener.a runtime=" +
+                            System.identityHashCode(callbackRuntime),
+                )
+            }
+
+            private fun handleKernelInitComplete(callbackRuntime: AppRuntime) {
+                if (!RuntimeCoordinator.isCurrent(boundRuntime)) {
+                    Log.w(TAG, "bind: kernel complete callback belongs to stale runtime")
+                    return
+                }
+                if (!kernelInitCompleteNotified.compareAndSet(false, true)) {
+                    Log.d(TAG, "bind: project IKernelCreateListener.b ignored (duplicate)")
+                    return
+                }
+                Log.d(
+                    TAG,
+                    "bind: project IKernelCreateListener.b runtime=" +
+                            System.identityHashCode(callbackRuntime),
+                )
+                // Keep b lightweight. KernelServiceImpl invokes it from its
+                // native completion callback; service getters are re-read from
+                // the owning worker in waitForSession/reinitializeAfterLogin.
+                registerDirectMsfConnectionBridge(boundRuntime)
+                registerOfficialForegroundCallback(boundRuntime)
+                runCatching {
+                    val context = com.tencent.qphone.base.util.BaseApplication.getContext()
+                    context.sendBroadcast(
+                        android.content.Intent("com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE")
+                            .setPackage(context.packageName),
+                    )
+                }.onFailure { Log.w(TAG, "bind: init-complete broadcast failed", it) }
             }
         }
 
-        runCatching {
-            val callbackMethod = setter.javaClass.getMethod(
-                "getAccountCallback",
-                Class.forName("com.tencent.qqnt.kernel.api.IKernelCreateListener"),
+        return runCatching {
+            OfflineDiagnostics.record(
+                boundRuntime.applicationContext,
+                "kernel_start_enter",
+                "runtimeIdentity=${System.identityHashCode(boundRuntime)}",
             )
-            val accountCallback = callbackMethod.invoke(setter, listener)
-            MobileQQ.sMobileQQ?.registerAccountCallback(accountCallback as? mqq.app.IAccountCallback)
-            Log.d(TAG, "bind: official account callback registered=$accountCallback")
-        }.onFailure { Log.w(TAG, "bind: official account callback setup failed", it) }
-
-        runCatching {
-            ks.start(listener as com.tencent.qqnt.kernel.api.IKernelCreateListener)
-            Log.i(TAG, "bind: official KernelServiceImpl.start(listener) requested")
-        }.onFailure { Log.e(TAG, "bind: official KernelServiceImpl.start failed", it) }
+            ks.start(listener)
+            OfflineDiagnostics.record(
+                boundRuntime.applicationContext,
+                "kernel_start_returned",
+                "runtimeIdentity=${System.identityHashCode(boundRuntime)}",
+            )
+            Log.i(TAG, "bind: project KernelService.start(listener) requested")
+            true
+        }.onFailure {
+            Log.e(TAG, "bind: project KernelService.start failed", it)
+        }.getOrDefault(false)
     }
 
     private fun registerOfficialForegroundCallback(runtime: AppRuntime?) {
@@ -819,18 +997,15 @@ object KernelBridge {
     }
 
 
-    private fun waitForSession(ks: IKernelService?) {
+    private fun waitForSession(ks: IKernelService?, runtime: AppRuntime? = null) {
         var waitCount = 0
         while (waitCount < 5) {
             Thread.sleep(500)
             waitCount++
-            val ws = runCatching {
-                val f = ks?.javaClass?.getDeclaredField("wrapperSession"); f?.isAccessible =
-                true; f?.get(ks)
-            }.getOrNull()
-            if (ws != null) {
+            val ws = runCatching { ks?.getWrapperSession() }.getOrNull()
+            if (ws != null && runtime != null && RuntimeCoordinator.isCurrent(runtime)) {
                 Log.d(TAG, "bind: kernel session established after ${waitCount * 500}ms")
-                if (ks != null) cacheServices(ks)
+                if (ks != null) cacheServices(ks, runtime, "waitForSession")
                 replayForegroundToWrapperSession(ws)
                 unblockPush()
                 break
@@ -873,40 +1048,24 @@ object KernelBridge {
             .onFailure { Log.w(TAG, "bind: WrapperSession.switchToFront failed", it) }
     }
 
-    /** 复用已有 wrapperSession 时，补做 IKernelCreateListener 回调里的关键初始化 */
+    /** Reuse an already-created session without replaying the official injector path. */
     private fun initExistingKernel(runtime: AppRuntime?, ks: IKernelService) {
-        Thread.sleep(500)
-        // A reused service does not pass through the direct starter's create
-        // callback, so install the safe MSF bridge here as well.
+        if (runtime == null || !RuntimeCoordinator.isCurrent(runtime)) {
+            Log.w(TAG, "initExistingKernel: runtime is no longer current")
+            return
+        }
+        cacheServices(ks, runtime, "initExistingKernel")
         registerDirectMsfConnectionBridge(runtime)
-        cacheServices(ks)
-        runCatching {
-            val contactSvc = runtime?.getRuntimeService(IContactRuntimeService::class.java, "")
-            Log.d(TAG, "initExistingKernel: contactSvc=$contactSvc")
-            contactSvc?.initUinToUidCache(true)
-            Log.d(TAG, "initExistingKernel: initUinToUidCache(true) OK")
-        }.onFailure { Log.e(TAG, "initExistingKernel: initUinToUidCache failed", it) }
-
-        runCatching {
-            val buddySvc = ks.getBuddyService()
-            Log.d(TAG, "initExistingKernel: buddySvc=$buddySvc")
-            buddySvc?.getBuddyList(true, object : IOperateCallback {
-                override fun onResult(code: Int, errMsg: String?) {
-                    Log.d(TAG, "initExistingKernel: getBuddyList code=$code, errMsg=$errMsg")
-                }
-            })
-            Log.d(TAG, "initExistingKernel: getBuddyList(true) called")
-        }.onFailure { Log.e(TAG, "initExistingKernel: getBuddyList failed", it) }
-
+        registerOfficialForegroundCallback(runtime)
+        initializeOfficialMessageBridge(runtime)
         runCatching {
             val ctx = com.tencent.qphone.base.util.BaseApplication.getContext()
             ctx.sendBroadcast(
                 android.content.Intent("com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE")
-                    .setPackage(ctx.packageName)
+                    .setPackage(ctx.packageName),
             )
             Log.d(TAG, "initExistingKernel: ON_KERNEL_INIT_COMPLETE sent")
-        }.onFailure { Log.e(TAG, "initExistingKernel: broadcast failed", it) }
-
+        }.onFailure { Log.w(TAG, "initExistingKernel: broadcast failed", it) }
         unblockPush()
     }
 
