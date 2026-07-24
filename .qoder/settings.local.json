@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"/home/rj/下载/QQ手表版-9.0.7.apk.1\" 2>&1; echo \"---LIBS---\"; ls -la /home/rj/qmme/app/libs/ 2>&1)",
+      "Read(//home/rj/下载/**)"
+    ]
+  }
+}

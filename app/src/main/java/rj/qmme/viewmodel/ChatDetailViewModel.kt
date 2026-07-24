@@ -40,6 +40,7 @@ class ChatDetailViewModel : ViewModel() {
         val sequence: Long,
         val timestampSeconds: Long,
         val senderName: String,
+        val senderUin: Long,
         val outgoing: Boolean,
         val text: String,
         val image: UiImage?,
@@ -441,6 +442,7 @@ class ChatDetailViewModel : ViewModel() {
                 }
             },
             outgoing = selfUin > 0L && senderUin == selfUin,
+            senderUin = senderUin,
             text = elements.orEmpty().joinToString(separator = "") { it.displayText() }
                 .ifBlank { "[暂不支持的消息]" },
             image = elements.orEmpty().firstNotNullOfOrNull { it.picElement }?.toUiImage(),

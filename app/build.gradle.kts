@@ -6,11 +6,16 @@ plugins {
     alias(libs.plugins.hikage)
 }
 
+val releaseKeyStorePassword = "android"
+val releaseKeyAlias = "key"
+val releaseKeyPassword = "android"
+
 android {
     namespace = "rj.qmme"
     compileSdk {
         version = release(37)
     }
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "rj.qmme"
@@ -31,6 +36,20 @@ android {
         buildConfig = true
     }
 
+    signingConfigs {
+        create("dev") {
+            // Using testkey
+            storeFile = file("./testkey.jks")
+            storePassword = releaseKeyStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = false
+            enableV4Signing = false
+        }
+    }
+
     // Match the original QQ APK's native-library packaging. Without legacy
     // packaging AGP stores every .so uncompressed, adding roughly 34 MiB to
     // the APK even though the native library set is smaller than the source.
@@ -41,8 +60,14 @@ android {
     }
 
     buildTypes {
+        val enableCodeShrinks = false
+        debug {
+            isDebuggable = true
+            signingConfig = signingConfigs.getByName("dev")
+        }
         release {
-            if (false)
+            signingConfig = signingConfigs.getByName("dev")
+            if (enableCodeShrinks)
             {
                 isMinifyEnabled = true
                 //noinspection NotShrinkingResources
@@ -54,7 +79,7 @@ android {
             }
         }
     }
-    // AGP 9 built-in Kotlin aligns its jvmTarget to these Java levels.
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

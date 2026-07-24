@@ -80,7 +80,7 @@ final class ProjectKernelBootstrap {
                     "wrapper_bootstrap_enter",
                     "runtimeIdentity=" + System.identityHashCode(runtime)
             );
-            boolean ok = engine.initWithMobileConfig(config, new ProjectGlobalAdapter(appContext, runtime));
+            boolean ok = engine.initWithMobileConfig(config, new ProjectGlobalAdapter(appContext, runtime, engine));
             String details = "runtimeIdentity=" + System.identityHashCode(runtime) + " result=" + ok;
             Log.i(TAG, "KernelBootstrap: initWithMobileConfig=" + details + " root=" + root);
             OfflineDiagnostics.INSTANCE.record(appContext, "wrapper_bootstrap_returned", details);
@@ -95,10 +95,12 @@ final class ProjectKernelBootstrap {
         private final Context context;
         private final AppRuntime runtime;
         private final DeviceInfo deviceInfo;
+        private final IQQNTWrapperEngine engine;
 
-        ProjectGlobalAdapter(Context context, AppRuntime runtime) {
+        ProjectGlobalAdapter(Context context, AppRuntime runtime, IQQNTWrapperEngine engine) {
             this.context = context;
             this.runtime = runtime;
+            this.engine = engine;
             this.deviceInfo = ProjectKernelDeviceInfo.safeCreate(context, runtime);
         }
 
@@ -157,8 +159,18 @@ final class ProjectKernelBootstrap {
          */
         @Override public void onSendSSORequest(long seq, String command, byte[] body,
                                                SendRequestParam param, String service,
-                                               HashMap<String, byte[]> ext, int timeout) {
-            Log.w(TAG, "KernelBootstrap: SSO request not connected command=" + command + " seq=" + seq);
+                                               HashMap<String, byte[]> ext, int commandType) {
+            ProjectKernelTransport.sendEngineSso(
+                    runtime,
+                    engine,
+                    seq,
+                    command,
+                    body,
+                    param,
+                    service,
+                    ext,
+                    commandType
+            );
         }
 
         @Override public void onShowErrUITips(String message) { Log.w(TAG, "KernelNative UI tip: " + message); }

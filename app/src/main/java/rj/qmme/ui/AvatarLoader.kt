@@ -26,6 +26,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import rj.qmme.viewmodel.ChatDetailViewModel
 import rj.qmme.viewmodel.ContactsViewModel
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -53,6 +54,7 @@ internal object AvatarLoader {
     private const val READ_TIMEOUT_MS = 12_000
     private const val MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024
     private const val MAX_DECODE_DIMENSION = 512
+    private const val TOOLBAR_AVATAR_DP = 30
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val memoryCache = object : LruCache<String, Bitmap>(memoryCacheSize()) {
@@ -63,6 +65,8 @@ internal object AvatarLoader {
     private val requestIds = WeakHashMap<ImageView, Long>()
     private val navigationJobs = WeakHashMap<MaterialToolbar, Job>()
     private val navigationRequestIds = WeakHashMap<MaterialToolbar, Long>()
+    private val logoJobs = WeakHashMap<MaterialToolbar, Job>()
+    private val logoRequestIds = WeakHashMap<MaterialToolbar, Long>()
     private var nextRequestId = 0L
 
     /** A relative 50% corner size is a real circle for our square avatar views. */
@@ -201,7 +205,7 @@ internal object AvatarLoader {
                 if (!current) return@withContext
                 toolbar.navigationIcon = bitmap
                     ?.takeUnless(Bitmap::isRecycled)
-                    ?.let { circularToolbarAvatar(toolbar, it) }
+                    ?.let { circularToolbarAvatar(toolbar, it, TOOLBAR_AVATAR_DP) }
                     ?: fallback
                 synchronized(this@AvatarLoader) {
                     if (navigationRequestIds[toolbar] == requestId) {
@@ -223,10 +227,91 @@ internal object AvatarLoader {
         }
     }
 
-    private fun circularToolbarAvatar(toolbar: MaterialToolbar, bitmap: Bitmap): Drawable =
-        RoundedBitmapDrawableFactory.create(toolbar.resources, bitmap).apply {
+    /**
+     * Load an avatar into MaterialToolbar's native logo slot, which renders
+     * between the navigation icon and the title.  Used by the chat screen to
+     * show the peer avatar while the navigation slot keeps the back arrow.
+     */
+    fun bindLogo(
+        toolbar: MaterialToolbar,
+        localPath: String?,
+        urls: List<String>,
+        fallback: Drawable?,
+        sizeDp: Int = 32,
+    ) {
+        val appContext = toolbar.context.applicationContext
+        val requestId: Long
+        synchronized(this) {
+            logoJobs.remove(toolbar)?.cancel()
+            requestId = ++nextRequestId
+            logoRequestIds[toolbar] = requestId
+        }
+
+        toolbar.logo = fallback
+        toolbar.logoDescription = "对方头像"
+        val normalizedUrls = urls
+            .asSequence()
+            .map(String::trim)
+            .filter { it.startsWith("http://") || it.startsWith("https://") }
+            .distinct()
+            .toList()
+        if (localPath.isNullOrBlank() && normalizedUrls.isEmpty()) return
+
+        val job = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            val bitmap = try {
+                load(appContext, localPath, normalizedUrls)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                Log.d(TAG, "toolbar logo avatar load failed", error)
+                null
+            }
+            withContext(Dispatchers.Main.immediate) {
+                val current = synchronized(this@AvatarLoader) {
+                    logoRequestIds[toolbar] == requestId
+                }
+                if (!current) return@withContext
+                toolbar.logo = bitmap
+                    ?.takeUnless(Bitmap::isRecycled)
+                    ?.let { circularToolbarAvatar(toolbar, it, sizeDp) }
+                    ?: fallback
+                synchronized(this@AvatarLoader) {
+                    if (logoRequestIds[toolbar] == requestId) {
+                        logoJobs.remove(toolbar)
+                    }
+                }
+            }
+        }
+        synchronized(this) {
+            logoJobs[toolbar] = job
+        }
+        job.start()
+    }
+
+    fun unbindLogo(toolbar: MaterialToolbar) {
+        synchronized(this) {
+            logoJobs.remove(toolbar)?.cancel()
+            logoRequestIds.remove(toolbar)
+        }
+    }
+
+    private fun circularToolbarAvatar(
+        toolbar: MaterialToolbar,
+        bitmap: Bitmap,
+        sizeDp: Int,
+    ): Drawable {
+        val targetPx = (sizeDp * toolbar.resources.displayMetrics.density)
+            .toInt()
+            .coerceAtLeast(1)
+        val sized = if (bitmap.width == targetPx && bitmap.height == targetPx) {
+            bitmap
+        } else {
+            Bitmap.createScaledBitmap(bitmap, targetPx, targetPx, true)
+        }
+        return RoundedBitmapDrawableFactory.create(toolbar.resources, sized).apply {
             isCircular = true
         }
+    }
 
     private suspend fun load(
         context: Context,
@@ -465,6 +550,24 @@ internal object AvatarSources {
         if (buddy.uin > 0L) result += qlogoUrls(buddy.uin)
         return result.distinct()
     }
+
+    fun forChatTarget(target: ChatDetailViewModel.ChatTarget): List<String> {
+        val result = ArrayList<String>(4)
+        target.avatarUrl.trim()
+            .takeIf { it.startsWith("http://") || it.startsWith("https://") }
+            ?.let(result::add)
+        if (target.chatType == 2) {
+            target.peerUin.takeIf { it > 0L }?.let { gid ->
+                result += "https://p.qlogo.cn/gh/$gid/$gid/100"
+            }
+        } else if (target.peerUin > 0L) {
+            result += qlogoUrls(target.peerUin)
+        }
+        return result.distinct()
+    }
+
+    fun forSenderUin(uin: Long): List<String> =
+        if (uin > 0L) qlogoUrls(uin) else emptyList()
 
     private fun qlogoUrls(uin: Long): List<String> = listOf(
         "https://q1.qlogo.cn/g?b=qq&nk=$uin&s=100",

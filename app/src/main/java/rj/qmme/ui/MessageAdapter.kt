@@ -1,11 +1,14 @@
 package rj.qmme.ui
 
+import android.text.TextUtils
 import android.text.format.DateFormat
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ImageView
+import androidx.core.content.ContextCompat
 import androidx.core.widget.TextViewCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
@@ -22,20 +25,26 @@ import com.highcapable.hikage.widget.android.widget.LinearLayout as HLinearLayou
 import com.highcapable.hikage.widget.com.google.android.material.card.MaterialCardView as HMaterialCardView
 import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView as HMaterialTextView
 import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView as HShapeableImageView
+import rj.qmme.R
 import rj.qmme.viewmodel.ChatDetailViewModel
 import java.util.Date
 
 /** Material 3 Expressive message bubbles built entirely with Hikage/native Views. */
 class MessageAdapter(
+    private val isGroup: Boolean = false,
     private val onImageClick: (ChatDetailViewModel.UiImage) -> Unit = {},
     private val onMessageLongClick: (ChatDetailViewModel.UiMessage) -> Unit = {},
 ) : ListAdapter<ChatDetailViewModel.UiMessage, MessageAdapter.Holder>(DIFF) {
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
+        lateinit var rowContainer: LinearLayout
+        lateinit var avatar: ShapeableImageView
+        lateinit var nickname: MaterialTextView
         lateinit var card: MaterialCardView
-        lateinit var sender: MaterialTextView
         lateinit var image: ShapeableImageView
         lateinit var body: MaterialTextView
         lateinit var metadata: MaterialTextView
+        val maxBubbleWidth = (parent.resources.displayMetrics.widthPixels * 0.72f).toInt()
+        val imageWidth = minOf(dp(parent, 240), maxBubbleWidth)
         val hikage = Hikagable {
             HFrameLayout(
                 lparams = LayoutParams(widthMatchParent = true),
@@ -43,91 +52,129 @@ class MessageAdapter(
                     setPadding(dp(parent, 16), dp(parent, 3), dp(parent, 16), dp(parent, 3))
                 },
             ) {
-                card = HMaterialCardView(
+                rowContainer = HLinearLayout(
                     lparams = LayoutParams(
                         width = ViewGroup.LayoutParams.WRAP_CONTENT,
                         height = ViewGroup.LayoutParams.WRAP_CONTENT,
                     ),
                     init = {
-                        radius = dp(parent, 24).toFloat()
-                        strokeWidth = 0
-                        cardElevation = 0f
-                        isClickable = true
-                        isFocusable = true
+                        orientation = LinearLayout.HORIZONTAL
                     },
                 ) {
+                    avatar = HShapeableImageView(
+                        lparams = LayoutParams(width = dp(parent, 36), height = dp(parent, 36)) {
+                            gravity = Gravity.TOP
+                            rightMargin = dp(parent, 8)
+                        },
+                        init = {
+                            AvatarLoader.makeCircular(this)
+                            scaleType = ImageView.ScaleType.CENTER_CROP
+                            contentDescription = "发送者头像"
+                            visibility = View.GONE
+                        },
+                    )
                     HLinearLayout(
                         lparams = LayoutParams(
                             width = ViewGroup.LayoutParams.WRAP_CONTENT,
                             height = ViewGroup.LayoutParams.WRAP_CONTENT,
                         ),
-                        init = {
-                            orientation = LinearLayout.VERTICAL
-                            setPadding(dp(parent, 16), dp(parent, 10), dp(parent, 16), dp(parent, 9))
-                        },
+                        init = { orientation = LinearLayout.VERTICAL },
                     ) {
-                        sender = HMaterialTextView(
-                            lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
+                        nickname = HMaterialTextView(
+                            lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
+                                leftMargin = dp(parent, 4)
+                                bottomMargin = dp(parent, 2)
+                            },
                             init = {
                                 TextViewCompat.setTextAppearance(
                                     this,
                                     com.google.android.material.R.style.TextAppearance_Material3_LabelMedium,
                                 )
-                                visibility = android.view.View.GONE
-                                maxWidth = dp(parent, 320)
+                                maxLines = 1
+                                maxWidth = maxBubbleWidth
+                                ellipsize = TextUtils.TruncateAt.END
+                                visibility = View.GONE
                             },
                         )
-                        image = HShapeableImageView(
+                        card = HMaterialCardView(
                             lparams = LayoutParams(
-                                width = dp(parent, 240),
-                                height = dp(parent, 180),
+                                width = ViewGroup.LayoutParams.WRAP_CONTENT,
+                                height = ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ),
+                            init = {
+                                radius = dp(parent, 24).toFloat()
+                                strokeWidth = 0
+                                cardElevation = 0f
+                                isClickable = true
+                                isFocusable = true
+                            },
+                        ) {
+                            HLinearLayout(
+                                lparams = LayoutParams(
+                                    width = ViewGroup.LayoutParams.WRAP_CONTENT,
+                                    height = ViewGroup.LayoutParams.WRAP_CONTENT,
+                                ),
+                                init = {
+                                    orientation = LinearLayout.VERTICAL
+                                    setPadding(dp(parent, 16), dp(parent, 10), dp(parent, 16), dp(parent, 9))
+                                },
                             ) {
-                                topMargin = dp(parent, 4)
-                                bottomMargin = dp(parent, 4)
-                            },
-                            init = {
-                                scaleType = ImageView.ScaleType.CENTER_CROP
-                                adjustViewBounds = true
-                                visibility = android.view.View.GONE
-                                contentDescription = "图片消息"
-                            },
-                        )
-                        body = HMaterialTextView(
-                            lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
-                                topMargin = dp(parent, 1)
-                            },
-                            init = {
-                                TextViewCompat.setTextAppearance(
-                                    this,
-                                    com.google.android.material.R.style.TextAppearance_Material3_BodyLarge,
+                                image = HShapeableImageView(
+                                    lparams = LayoutParams(
+                                        width = imageWidth,
+                                        height = dp(parent, 180),
+                                    ) {
+                                        topMargin = dp(parent, 4)
+                                        bottomMargin = dp(parent, 4)
+                                    },
+                                    init = {
+                                        scaleType = ImageView.ScaleType.CENTER_CROP
+                                        adjustViewBounds = true
+                                        visibility = View.GONE
+                                        contentDescription = "图片消息"
+                                    },
                                 )
-                                maxWidth = dp(parent, 320)
-                                setTextIsSelectable(true)
-                            },
-                        )
-                        metadata = HMaterialTextView(
-                            lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
-                                topMargin = dp(parent, 4)
-                            },
-                            init = {
-                                TextViewCompat.setTextAppearance(
-                                    this,
-                                    com.google.android.material.R.style.TextAppearance_Material3_LabelSmall,
+                                body = HMaterialTextView(
+                                    lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
+                                        topMargin = dp(parent, 1)
+                                    },
+                                    init = {
+                                        TextViewCompat.setTextAppearance(
+                                            this,
+                                            com.google.android.material.R.style.TextAppearance_Material3_BodyLarge,
+                                        )
+                                        maxWidth = maxBubbleWidth
+                                        setTextIsSelectable(true)
+                                    },
                                 )
-                                maxWidth = dp(parent, 320)
-                            },
-                        )
+                                metadata = HMaterialTextView(
+                                    lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
+                                        topMargin = dp(parent, 4)
+                                    },
+                                    init = {
+                                        TextViewCompat.setTextAppearance(
+                                            this,
+                                            com.google.android.material.R.style.TextAppearance_Material3_LabelSmall,
+                                        )
+                                        maxWidth = maxBubbleWidth
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
             }
         }.create(parent.context, parent, false)
         return Holder(
             hikage.root,
+            rowContainer,
+            avatar,
+            nickname,
             card,
-            sender,
             image,
             body,
             metadata,
+            isGroup,
             onImageClick,
             onMessageLongClick,
         )
@@ -144,19 +191,43 @@ class MessageAdapter(
 
     class Holder(
         itemView: android.view.View,
+        private val rowContainer: LinearLayout,
+        private val avatar: ShapeableImageView,
+        private val nickname: MaterialTextView,
         private val card: MaterialCardView,
-        private val sender: MaterialTextView,
         private val image: ShapeableImageView,
         private val body: MaterialTextView,
         private val metadata: MaterialTextView,
+        private val isGroup: Boolean,
         private val onImageClick: (ChatDetailViewModel.UiImage) -> Unit,
         private val onMessageLongClick: (ChatDetailViewModel.UiMessage) -> Unit,
     ) : RecyclerView.ViewHolder(itemView) {
         fun bind(message: ChatDetailViewModel.UiMessage) {
             val context = itemView.context
-            (card.layoutParams as FrameLayout.LayoutParams).apply {
+            (rowContainer.layoutParams as FrameLayout.LayoutParams).apply {
                 gravity = if (message.outgoing) Gravity.END else Gravity.START
-            }.also(card::setLayoutParams)
+            }.also(rowContainer::setLayoutParams)
+
+            val showAvatar = isGroup && !message.outgoing
+            if (showAvatar) {
+                avatar.visibility = View.VISIBLE
+                avatar.scaleType = ImageView.ScaleType.CENTER_CROP
+                AvatarLoader.bind(
+                    imageView = avatar,
+                    localPath = null,
+                    urls = AvatarSources.forSenderUin(message.senderUin),
+                    fallback = ContextCompat.getDrawable(context, R.drawable.ic_account_circle),
+                    circular = true,
+                )
+            } else {
+                AvatarLoader.unbind(avatar)
+                avatar.setImageDrawable(null)
+                avatar.visibility = View.GONE
+            }
+
+            val showNickname = isGroup && !message.outgoing && message.senderName.isNotBlank()
+            nickname.visibility = if (showNickname) View.VISIBLE else View.GONE
+            if (showNickname) nickname.text = message.senderName
 
             card.setCardBackgroundColor(
                 MaterialColors.getColor(
@@ -177,24 +248,20 @@ class MessageAdapter(
                 },
             )
             body.setTextColor(onContainer)
-            sender.setTextColor(onContainer)
             metadata.setTextColor(
                 MaterialColors.getColor(card, com.google.android.material.R.attr.colorOnSurfaceVariant),
             )
+            nickname.setTextColor(
+                MaterialColors.getColor(nickname, com.google.android.material.R.attr.colorOnSurfaceVariant),
+            )
 
-            sender.text = message.senderName
-            sender.visibility = if (!message.outgoing && message.senderName.isNotBlank()) {
-                android.view.View.VISIBLE
-            } else {
-                android.view.View.GONE
-            }
             val picture = message.image
             if (picture == null) {
                 AvatarLoader.unbind(image)
-                image.visibility = android.view.View.GONE
+                image.visibility = View.GONE
                 image.setOnClickListener(null)
             } else {
-                image.visibility = android.view.View.VISIBLE
+                image.visibility = View.VISIBLE
                 val availableLocal = picture.localPaths.firstOrNull(String::isNotBlank)
                 AvatarLoader.bind(
                     imageView = image,
@@ -207,9 +274,9 @@ class MessageAdapter(
             }
             body.text = message.text
             body.visibility = if (picture != null && message.text == "[图片]") {
-                android.view.View.GONE
+                View.GONE
             } else {
-                android.view.View.VISIBLE
+                View.VISIBLE
             }
             metadata.text = buildString {
                 val millis = message.timestampSeconds * 1000L
@@ -232,6 +299,7 @@ class MessageAdapter(
 
         fun unbind() {
             AvatarLoader.unbind(image)
+            AvatarLoader.unbind(avatar)
             image.setOnClickListener(null)
         }
     }

@@ -305,8 +305,34 @@ final class ProjectKernelDependencies {
             );
             return new SessionTicket(a2, d2, d2Key);
         }
-        @Override public void onSendNetRequest(long seq, String host, String path, HashMap<String, String> headers, HashMap<String, String> params, int retry, int timeout) { }
-        @Override public void onSendOidbRequest(long seq, int service, int command, byte[] body, SendRequestParam param, String cmd, HashMap<String, byte[]> ext) { }
+        @Override public void onSendNetRequest(long seq, String httpMethod, String url,
+                                                HashMap<String, String> headers,
+                                                HashMap<String, String> params,
+                                                int retry, int timeout) {
+            ProjectKernelTransport.sendNetRequest(
+                    runtime,
+                    seq,
+                    httpMethod,
+                    url,
+                    headers,
+                    params,
+                    retry,
+                    timeout
+            );
+        }
+        @Override public void onSendOidbRequest(long seq, int service, int command, byte[] body,
+                                                SendRequestParam param, String cmd,
+                                                HashMap<String, byte[]> ext) {
+            // Normal OIDB requests are already serialized by KernelServiceImpl's
+            // own IDependsAdapter and dispatched through KernelServlet.  The
+            // official Watch SenderModule leaves this callback empty as well;
+            // keep it side-effect-free and avoid issuing a duplicate request.
+            OfflineDiagnostics.INSTANCE.record(
+                    runtime.getApplicationContext(),
+                    "transport_oidb_delegated",
+                    "seq=" + seq + " command=" + command
+            );
+        }
     }
 
     private static final class TicketSnapshot {
