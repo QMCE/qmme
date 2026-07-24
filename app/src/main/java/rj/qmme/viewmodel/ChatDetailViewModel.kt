@@ -18,6 +18,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import rj.qmme.data.chat.ChatRepository
 import rj.qmme.runtime.RuntimeCoordinator
@@ -102,6 +103,11 @@ class ChatDetailViewModel : ViewModel() {
     val messageActionInProgress: StateFlow<Boolean> = _messageActionInProgress.asStateFlow()
 
     private var openJob: Job? = null
+    private var stateJob: Job? = null
+    @Volatile
+    private var opening = false
+    @Volatile
+    private var resyncing = false
     @Volatile
     private var sessionGeneration = 0L
     private var selfUin = 0L
@@ -121,23 +127,37 @@ class ChatDetailViewModel : ViewModel() {
         _hasOlder.value = true
         _statusText.value = "正在连接消息服务…"
 
+        opening = true
         openJob = viewModelScope.launch(Dispatchers.IO) {
-            val runtime = RuntimeCoordinator.currentRuntime()
-            when (val connection = repository.connect(runtime)) {
-                ChatRepository.Connection.Ready -> {
-                    RuntimeCoordinator.currentSession()?.let { sessionGeneration = it.generation }
-                    if (!isCurrentSession()) {
-                        failOpen("登录会话已变化，请重新打开聊天")
-                        return@launch
+            try {
+                val runtime = RuntimeCoordinator.currentRuntime()
+                when (val connection = repository.connect(runtime)) {
+                    ChatRepository.Connection.Ready -> {
+                        RuntimeCoordinator.currentSession()?.let { sessionGeneration = it.generation }
+                        if (!isCurrentSession()) {
+                            failOpen("登录会话已变化，请重新打开聊天")
+                            return@launch
+                        }
+                        registerListener(target)
+                        loadLatest(target)
                     }
-                    registerListener(target)
-                    loadLatest(target)
-                }
 
-                ChatRepository.Connection.KernelUnavailable -> failOpen("QQ 内核尚未就绪")
-                is ChatRepository.Connection.MessageServiceUnavailable -> failOpen(
-                    if (connection.timedOut) "消息服务连接超时" else "消息服务不可用",
-                )
+                    ChatRepository.Connection.KernelUnavailable -> failOpen("QQ 内核尚未就绪")
+                    is ChatRepository.Connection.MessageServiceUnavailable -> failOpen(
+                        if (connection.timedOut) "消息服务连接超时" else "消息服务不可用",
+                    )
+                }
+            } finally {
+                opening = false
+            }
+        }
+
+        stateJob?.cancel()
+        stateJob = viewModelScope.launch {
+            RuntimeCoordinator.state.collectLatest {
+                val active = _target.value ?: return@collectLatest
+                if (RuntimeCoordinator.currentRuntime() == null) return@collectLatest
+                resyncIfNeeded(active)
             }
         }
     }
@@ -148,6 +168,36 @@ class ChatDetailViewModel : ViewModel() {
         closeChat(clearTarget = false)
         sessionGeneration = 0L
         openChat(current, account)
+    }
+
+    /**
+     * Recover a live chat after the embedded runtime's generation changed or the
+     * kernel message service was replaced.  Without this, the passive listener
+     * and the per-generation service cache go stale and the screen silently
+     * stops refreshing while sends fail with "service unavailable".
+     */
+    private fun resyncIfNeeded(target: ChatTarget) {
+        if (opening || resyncing) return
+        if (_target.value != target) return
+        val currentGeneration = RuntimeCoordinator.currentSession()?.generation ?: 0L
+        val healthy = currentGeneration == sessionGeneration && repository.isConnected()
+        if (healthy) return
+
+        resyncing = true
+        openJob?.cancel()
+        openJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val runtime = RuntimeCoordinator.currentRuntime()
+                if (repository.connect(runtime) is ChatRepository.Connection.Ready) {
+                    RuntimeCoordinator.currentSession()?.let { sessionGeneration = it.generation }
+                    if (_target.value != target) return@launch
+                    registerListener(target)
+                    loadLatest(target)
+                }
+            } finally {
+                resyncing = false
+            }
+        }
     }
 
     fun loadOlder() {
@@ -190,6 +240,11 @@ class ChatDetailViewModel : ViewModel() {
         _sending.value = true
         _statusText.value = "正在发送…"
         val started = repository.sendText(target.toKernelContact(), normalized) { code, errorMessage ->
+            Log.i(
+                TAG,
+                "sendText result code=$code msg=$errorMessage " +
+                    "sameTarget=${isCurrentTarget(target)} connected=${repository.isConnected()}",
+            )
             if (!isCurrentTarget(target)) return@sendText
             _sending.value = false
             _statusText.value = if (code == 0) {
@@ -198,9 +253,16 @@ class ChatDetailViewModel : ViewModel() {
                 errorMessage?.takeIf(String::isNotBlank)?.let { "发送失败：$it" } ?: "发送失败"
             }
         }
+        Log.i(
+            TAG,
+            "sendText started=$started connected=${repository.isConnected()} " +
+                "gen=$sessionGeneration curGen=${RuntimeCoordinator.currentSession()?.generation} " +
+                "peer=${target.peerUid} type=${target.chatType}",
+        )
         if (!started) {
             _sending.value = false
-            _statusText.value = "消息服务不可用，发送失败"
+            _statusText.value = "消息服务未就绪，正在重连，请重试"
+            resyncIfNeeded(target)
         }
         return started
     }
@@ -332,6 +394,10 @@ class ChatDetailViewModel : ViewModel() {
     fun closeChat(clearTarget: Boolean = true) {
         openJob?.cancel()
         openJob = null
+        stateJob?.cancel()
+        stateJob = null
+        opening = false
+        resyncing = false
         repository.close()
         _loading.value = false
         _loadingOlder.value = false
@@ -361,7 +427,10 @@ class ChatDetailViewModel : ViewModel() {
                 if (readCode != 0) Log.w(TAG, "mark read failed: $readError")
             }
         }
-        if (!started) failOpen("消息服务不可用")
+        if (!started) {
+            failOpen("消息服务不可用")
+            resyncIfNeeded(target)
+        }
     }
 
     private fun registerListener(target: ChatTarget) {
@@ -556,7 +625,7 @@ class ChatDetailViewModel : ViewModel() {
         sessionGeneration > 0L && RuntimeCoordinator.currentSession()?.generation == sessionGeneration
 
     private fun isCurrentTarget(target: ChatTarget): Boolean =
-        _target.value == target && isCurrentSession()
+        _target.value == target
 
     private fun failOpen(message: String) {
         _loading.value = false

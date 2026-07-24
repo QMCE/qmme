@@ -29,7 +29,7 @@ import rj.qmme.R
 import rj.qmme.viewmodel.ChatDetailViewModel
 import java.util.Date
 
-/** Material 3 Expressive message bubbles built entirely with Hikage/native Views. */
+/** Material 3 Expressive message rows: grouped by sender, list-flavored, time on the meta row. */
 class MessageAdapter(
     private val isGroup: Boolean = false,
     private val onImageClick: (ChatDetailViewModel.UiImage) -> Unit = {},
@@ -38,18 +38,19 @@ class MessageAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         lateinit var rowContainer: LinearLayout
         lateinit var avatar: ShapeableImageView
+        lateinit var metaRow: LinearLayout
         lateinit var nickname: MaterialTextView
+        lateinit var time: MaterialTextView
         lateinit var card: MaterialCardView
         lateinit var image: ShapeableImageView
         lateinit var body: MaterialTextView
-        lateinit var metadata: MaterialTextView
         val maxBubbleWidth = (parent.resources.displayMetrics.widthPixels * 0.72f).toInt()
         val imageWidth = minOf(dp(parent, 240), maxBubbleWidth)
         val hikage = Hikagable {
             HFrameLayout(
                 lparams = LayoutParams(widthMatchParent = true),
                 init = {
-                    setPadding(dp(parent, 16), dp(parent, 3), dp(parent, 16), dp(parent, 3))
+                    setPadding(dp(parent, 16), dp(parent, 1), dp(parent, 16), dp(parent, 1))
                 },
             ) {
                 rowContainer = HLinearLayout(
@@ -80,29 +81,53 @@ class MessageAdapter(
                         ),
                         init = { orientation = LinearLayout.VERTICAL },
                     ) {
-                        nickname = HMaterialTextView(
-                            lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
+                        metaRow = HLinearLayout(
+                            lparams = LayoutParams(
+                                width = ViewGroup.LayoutParams.WRAP_CONTENT,
+                                height = ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ) {
                                 leftMargin = dp(parent, 4)
-                                bottomMargin = dp(parent, 2)
+                                rightMargin = dp(parent, 4)
+                                bottomMargin = dp(parent, 3)
                             },
                             init = {
-                                TextViewCompat.setTextAppearance(
-                                    this,
-                                    com.google.android.material.R.style.TextAppearance_Material3_LabelMedium,
-                                )
-                                maxLines = 1
-                                maxWidth = maxBubbleWidth
-                                ellipsize = TextUtils.TruncateAt.END
-                                visibility = View.GONE
+                                orientation = LinearLayout.HORIZONTAL
+                                gravity = Gravity.CENTER_VERTICAL
                             },
-                        )
+                        ) {
+                            nickname = HMaterialTextView(
+                                lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
+                                    rightMargin = dp(parent, 6)
+                                },
+                                init = {
+                                    TextViewCompat.setTextAppearance(
+                                        this,
+                                        com.google.android.material.R.style.TextAppearance_Material3_LabelMedium,
+                                    )
+                                    maxLines = 1
+                                    maxWidth = maxBubbleWidth
+                                    ellipsize = TextUtils.TruncateAt.END
+                                    visibility = View.GONE
+                                },
+                            )
+                            time = HMaterialTextView(
+                                lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
+                                init = {
+                                    TextViewCompat.setTextAppearance(
+                                        this,
+                                        com.google.android.material.R.style.TextAppearance_Material3_LabelSmall,
+                                    )
+                                    maxLines = 1
+                                },
+                            )
+                        }
                         card = HMaterialCardView(
                             lparams = LayoutParams(
                                 width = ViewGroup.LayoutParams.WRAP_CONTENT,
                                 height = ViewGroup.LayoutParams.WRAP_CONTENT,
                             ),
                             init = {
-                                radius = dp(parent, 24).toFloat()
+                                radius = dp(parent, 12).toFloat()
                                 strokeWidth = 0
                                 cardElevation = 0f
                                 isClickable = true
@@ -116,7 +141,7 @@ class MessageAdapter(
                                 ),
                                 init = {
                                     orientation = LinearLayout.VERTICAL
-                                    setPadding(dp(parent, 16), dp(parent, 10), dp(parent, 16), dp(parent, 9))
+                                    setPadding(dp(parent, 12), dp(parent, 8), dp(parent, 12), dp(parent, 8))
                                 },
                             ) {
                                 image = HShapeableImageView(
@@ -124,8 +149,8 @@ class MessageAdapter(
                                         width = imageWidth,
                                         height = dp(parent, 180),
                                     ) {
-                                        topMargin = dp(parent, 4)
-                                        bottomMargin = dp(parent, 4)
+                                        topMargin = dp(parent, 2)
+                                        bottomMargin = dp(parent, 2)
                                     },
                                     init = {
                                         scaleType = ImageView.ScaleType.CENTER_CROP
@@ -135,9 +160,7 @@ class MessageAdapter(
                                     },
                                 )
                                 body = HMaterialTextView(
-                                    lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
-                                        topMargin = dp(parent, 1)
-                                    },
+                                    lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
                                     init = {
                                         TextViewCompat.setTextAppearance(
                                             this,
@@ -145,18 +168,6 @@ class MessageAdapter(
                                         )
                                         maxWidth = maxBubbleWidth
                                         setTextIsSelectable(true)
-                                    },
-                                )
-                                metadata = HMaterialTextView(
-                                    lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
-                                        topMargin = dp(parent, 4)
-                                    },
-                                    init = {
-                                        TextViewCompat.setTextAppearance(
-                                            this,
-                                            com.google.android.material.R.style.TextAppearance_Material3_LabelSmall,
-                                        )
-                                        maxWidth = maxBubbleWidth
                                     },
                                 )
                             }
@@ -169,11 +180,12 @@ class MessageAdapter(
             hikage.root,
             rowContainer,
             avatar,
+            metaRow,
             nickname,
+            time,
             card,
             image,
             body,
-            metadata,
             isGroup,
             onImageClick,
             onMessageLongClick,
@@ -181,7 +193,13 @@ class MessageAdapter(
     }
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
-        holder.bind(getItem(position))
+        val message = getItem(position)
+        val previous = if (position > 0) getItem(position - 1) else null
+        val firstOfGroup = previous == null ||
+            previous.outgoing != message.outgoing ||
+            previous.senderUin != message.senderUin ||
+            (message.timestampSeconds - previous.timestampSeconds) > GROUP_GAP_SECONDS
+        holder.bind(message, firstOfGroup)
     }
 
     override fun onViewRecycled(holder: Holder) {
@@ -193,46 +211,98 @@ class MessageAdapter(
         itemView: android.view.View,
         private val rowContainer: LinearLayout,
         private val avatar: ShapeableImageView,
+        private val metaRow: LinearLayout,
         private val nickname: MaterialTextView,
+        private val time: MaterialTextView,
         private val card: MaterialCardView,
         private val image: ShapeableImageView,
         private val body: MaterialTextView,
-        private val metadata: MaterialTextView,
         private val isGroup: Boolean,
         private val onImageClick: (ChatDetailViewModel.UiImage) -> Unit,
         private val onMessageLongClick: (ChatDetailViewModel.UiMessage) -> Unit,
     ) : RecyclerView.ViewHolder(itemView) {
-        fun bind(message: ChatDetailViewModel.UiMessage) {
+        fun bind(message: ChatDetailViewModel.UiMessage, firstOfGroup: Boolean) {
             val context = itemView.context
+            val outgoing = message.outgoing
+            val edge = if (outgoing) Gravity.END else Gravity.START
+
             (rowContainer.layoutParams as FrameLayout.LayoutParams).apply {
-                gravity = if (message.outgoing) Gravity.END else Gravity.START
+                gravity = edge
             }.also(rowContainer::setLayoutParams)
 
-            val showAvatar = isGroup && !message.outgoing
-            if (showAvatar) {
-                avatar.visibility = View.VISIBLE
-                avatar.scaleType = ImageView.ScaleType.CENTER_CROP
-                AvatarLoader.bind(
-                    imageView = avatar,
-                    localPath = null,
-                    urls = AvatarSources.forSenderUin(message.senderUin),
-                    fallback = ContextCompat.getDrawable(context, R.drawable.ic_account_circle),
-                    circular = true,
-                )
-            } else {
-                AvatarLoader.unbind(avatar)
-                avatar.setImageDrawable(null)
-                avatar.visibility = View.GONE
+            // Tighter top spacing between grouped messages; a wider gap starts a group.
+            itemView.setPadding(
+                dp(16),
+                if (firstOfGroup) dp(8) else dp(1),
+                dp(16),
+                dp(1),
+            )
+
+            // Avatar (group incoming only): shown on the first of a run, otherwise
+            // kept INVISIBLE so grouped bubbles stay indented under the first.
+            val avatarColumn = isGroup && !outgoing
+            when {
+                avatarColumn && firstOfGroup -> {
+                    avatar.visibility = View.VISIBLE
+                    avatar.scaleType = ImageView.ScaleType.CENTER_CROP
+                    AvatarLoader.bind(
+                        imageView = avatar,
+                        localPath = null,
+                        urls = AvatarSources.forSenderUin(message.senderUin),
+                        fallback = ContextCompat.getDrawable(context, R.drawable.ic_account_circle),
+                        circular = true,
+                    )
+                }
+
+                avatarColumn -> {
+                    AvatarLoader.unbind(avatar)
+                    avatar.setImageDrawable(null)
+                    avatar.visibility = View.INVISIBLE
+                }
+
+                else -> {
+                    AvatarLoader.unbind(avatar)
+                    avatar.setImageDrawable(null)
+                    avatar.visibility = View.GONE
+                }
             }
 
-            val showNickname = isGroup && !message.outgoing && message.senderName.isNotBlank()
-            nickname.visibility = if (showNickname) View.VISIBLE else View.GONE
-            if (showNickname) nickname.text = message.senderName
+            // Meta row (nickname + time) lives OUTSIDE the bubble, above it.  It is
+            // shown for the first message of a run, or while a send is in flight.
+            val sending = outgoing && message.sendStatus != 0 && message.sendStatus != 2
+            val showMeta = firstOfGroup || sending
+            metaRow.visibility = if (showMeta) View.VISIBLE else View.GONE
+            if (showMeta) {
+                metaRow.gravity = Gravity.CENTER_VERTICAL or edge
+                alignChild(metaRow, edge)
+                alignChild(card, edge)
+
+                val showNickname = isGroup && !outgoing && firstOfGroup && message.senderName.isNotBlank()
+                nickname.visibility = if (showNickname) View.VISIBLE else View.GONE
+                if (showNickname) nickname.text = message.senderName
+                nickname.setTextColor(
+                    MaterialColors.getColor(nickname, com.google.android.material.R.attr.colorOnSurfaceVariant),
+                )
+
+                time.setTextColor(
+                    MaterialColors.getColor(time, com.google.android.material.R.attr.colorOnSurfaceVariant),
+                )
+                time.text = buildString {
+                    val millis = message.timestampSeconds * 1000L
+                    if (millis > 0L) append(DateFormat.getTimeFormat(context).format(Date(millis)))
+                    if (sending) {
+                        if (isNotEmpty()) append("  ·  ")
+                        append("发送中")
+                    }
+                }
+            } else {
+                alignChild(card, edge)
+            }
 
             card.setCardBackgroundColor(
                 MaterialColors.getColor(
                     card,
-                    if (message.outgoing) {
+                    if (outgoing) {
                         com.google.android.material.R.attr.colorPrimaryContainer
                     } else {
                         com.google.android.material.R.attr.colorSurfaceContainerHigh
@@ -241,19 +311,13 @@ class MessageAdapter(
             )
             val onContainer = MaterialColors.getColor(
                 card,
-                if (message.outgoing) {
+                if (outgoing) {
                     com.google.android.material.R.attr.colorOnPrimaryContainer
                 } else {
                     com.google.android.material.R.attr.colorOnSurface
                 },
             )
             body.setTextColor(onContainer)
-            metadata.setTextColor(
-                MaterialColors.getColor(card, com.google.android.material.R.attr.colorOnSurfaceVariant),
-            )
-            nickname.setTextColor(
-                MaterialColors.getColor(nickname, com.google.android.material.R.attr.colorOnSurfaceVariant),
-            )
 
             val picture = message.image
             if (picture == null) {
@@ -278,16 +342,8 @@ class MessageAdapter(
             } else {
                 View.VISIBLE
             }
-            metadata.text = buildString {
-                val millis = message.timestampSeconds * 1000L
-                if (millis > 0L) append(DateFormat.getTimeFormat(context).format(Date(millis)))
-                if (message.outgoing && message.sendStatus != 0) {
-                    if (isNotEmpty()) append("  ·  ")
-                    append(if (message.sendStatus == 2) "已发送" else "发送中")
-                }
-            }
             card.contentDescription = buildString {
-                append(if (message.outgoing) "我" else message.senderName.ifBlank { "对方" })
+                append(if (outgoing) "我" else message.senderName.ifBlank { "对方" })
                 append("：")
                 append(message.text)
             }
@@ -302,12 +358,25 @@ class MessageAdapter(
             AvatarLoader.unbind(avatar)
             image.setOnClickListener(null)
         }
+
+        private fun alignChild(view: View, edge: Int) {
+            (view.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+                if (params.gravity != edge) {
+                    params.gravity = edge
+                    view.layoutParams = params
+                }
+            }
+        }
+
+        private fun dp(value: Int): Int =
+            (value * itemView.resources.displayMetrics.density).toInt()
     }
 
     private fun dp(parent: ViewGroup, value: Int): Int =
         (value * parent.resources.displayMetrics.density).toInt()
 
     private companion object {
+        const val GROUP_GAP_SECONDS = 300L
         val DIFF = object : DiffUtil.ItemCallback<ChatDetailViewModel.UiMessage>() {
             override fun areItemsTheSame(
                 oldItem: ChatDetailViewModel.UiMessage,

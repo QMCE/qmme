@@ -5,6 +5,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import androidx.core.content.ContextCompat
@@ -16,12 +17,12 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.divider.MaterialDivider
+import com.google.android.material.imageview.ShapeableImageView
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.textview.MaterialTextView
 import com.highcapable.hikage.annotation.Hikagable as HikagableAnnotation
@@ -34,10 +35,10 @@ import com.highcapable.hikage.widget.android.widget.ScrollView as HScrollView
 import com.highcapable.hikage.widget.androidx.recyclerview.widget.RecyclerView as HRecyclerView
 import com.highcapable.hikage.widget.androidx.swiperefreshlayout.widget.SwipeRefreshLayout as HSwipeRefreshLayout
 import com.highcapable.hikage.widget.com.google.android.material.bottomnavigation.BottomNavigationView as HBottomNavigationView
-import com.highcapable.hikage.widget.com.google.android.material.appbar.MaterialToolbar as HMaterialToolbar
 import com.highcapable.hikage.widget.com.google.android.material.card.MaterialCardView as HMaterialCardView
 import com.highcapable.hikage.widget.com.google.android.material.chip.Chip as HChip
 import com.highcapable.hikage.widget.com.google.android.material.divider.MaterialDivider as HMaterialDivider
+import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView as HShapeableImageView
 import com.highcapable.hikage.widget.com.google.android.material.button.MaterialButton as HMaterialButton
 import com.highcapable.hikage.widget.com.google.android.material.progressindicator.CircularProgressIndicator as HCircularProgressIndicator
 import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView as HMaterialTextView
@@ -68,7 +69,9 @@ class MainHikagable(
     private val onOpenChat: (com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo) -> Unit,
     private val onOpenContactChat: (ContactsViewModel.UiBuddy) -> Unit,
 ) : HikageScreen {
-    private lateinit var toolbar: MaterialToolbar
+    private lateinit var avatarView: ShapeableImageView
+    private lateinit var toolbarTitle: MaterialTextView
+    private lateinit var toolbarSubtitle: MaterialTextView
     private lateinit var chatPage: LinearLayout
     private lateinit var contactsPage: LinearLayout
     private lateinit var myPage: ScrollView
@@ -169,8 +172,9 @@ class MainHikagable(
 
         // Start the visible avatar immediately with the remote fallback; the
         // self-profile path below replaces it when QQ exposes a local copy.
-        AvatarLoader.bindNavigationIcon(
-            toolbar = toolbar,
+        avatarView.scaleType = ImageView.ScaleType.CENTER_CROP
+        AvatarLoader.bind(
+            imageView = avatarView,
             localPath = null,
             urls = AvatarSources.forSelf(account.uin),
             fallback = ContextCompat.getDrawable(context, R.drawable.ic_account_circle),
@@ -179,7 +183,7 @@ class MainHikagable(
             try {
                 awaitCancellation()
             } finally {
-                AvatarLoader.unbindNavigationIcon(toolbar)
+                AvatarLoader.unbind(avatarView)
             }
         }
 
@@ -202,8 +206,9 @@ class MainHikagable(
                 ?.getCurrentAccountAvatarPath(account.uin)
                 .orEmpty()
             withContext(Dispatchers.Main.immediate) {
-                AvatarLoader.bindNavigationIcon(
-                    toolbar = toolbar,
+                avatarView.scaleType = ImageView.ScaleType.CENTER_CROP
+                AvatarLoader.bind(
+                    imageView = avatarView,
                     localPath = selfAvatarPath,
                     urls = AvatarSources.forSelf(account.uin),
                     fallback = ContextCompat.getDrawable(context, R.drawable.ic_account_circle),
@@ -247,10 +252,12 @@ class MainHikagable(
                         EdgeToEdgeInsets.applyTopInsetSpacer(this)
                     },
                 )
-                toolbar = HMaterialToolbar(
+                HLinearLayout(
                     lparams = LayoutParams(widthMatchParent = true),
                     init = {
-                        EdgeToEdgeInsets.applyHorizontalInsets(this)
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        minimumHeight = dp(56)
                         // Keep the app bar in the same M3 surface container as
                         // the active page rather than letting it read as a band.
                         setBackgroundColor(
@@ -259,19 +266,44 @@ class MainHikagable(
                                 com.google.android.material.R.attr.colorSurfaceContainer,
                             ),
                         )
-                        // A navigation icon is the toolbar's native leading slot.
-                        // It is intentionally used instead of a custom child: custom
-                        // children are laid out after title/subtitle by Toolbar.
-                        navigationIcon = ContextCompat.getDrawable(context, R.drawable.ic_account_circle)
-                        navigationContentDescription = "我的头像"
-                        setContentInsetsRelative(dp(72), dp(16))
-                        title = "消息"
-                        subtitle = onlineSubtitle()
-                        setTitleTextAppearance(context, com.google.android.material.R.style.TextAppearance_Material3_TitleLarge)
-                        setSubtitleTextAppearance(context, com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
                         contentDescription = "主导航"
+                        EdgeToEdgeInsets.applyHorizontalInsets(this)
                     },
-                )
+                ) {
+                    avatarView = HShapeableImageView(
+                        lparams = LayoutParams(width = dp(40), height = dp(40)) {
+                            leftMargin = dp(16)
+                        },
+                        init = {
+                            setImageResource(R.drawable.ic_account_circle)
+                            AvatarLoader.makeCircular(this)
+                            scaleType = ImageView.ScaleType.CENTER_INSIDE
+                            contentDescription = "我的头像"
+                        },
+                    )
+                    HLinearLayout(
+                        lparams = LayoutParams(
+                            width = ViewGroup.LayoutParams.WRAP_CONTENT,
+                            height = ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ) { leftMargin = dp(12) },
+                        init = { orientation = LinearLayout.VERTICAL },
+                    ) {
+                        toolbarTitle = HMaterialTextView(
+                            lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
+                            init = {
+                                text = "消息"
+                                TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_TitleLarge)
+                            },
+                        )
+                        toolbarSubtitle = HMaterialTextView(
+                            lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
+                            init = {
+                                text = onlineSubtitle()
+                                TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
+                            },
+                        )
+                    }
+                }
 
                 HFrameLayout(
                     lparams = LayoutParams(widthMatchParent = true, height = 0) { weight = 1f },
@@ -574,14 +606,14 @@ class MainHikagable(
         OnlineStatus.describe() ?: "正在同步在线状态"
 
     private fun renderOnlineStatus() {
-        toolbar.subtitle = onlineSubtitle()
+        toolbarSubtitle.text = onlineSubtitle()
     }
 
     private fun showPage(page: View) {
         chatPage.visibility = if (page === chatPage) View.VISIBLE else View.GONE
         contactsPage.visibility = if (page === contactsPage) View.VISIBLE else View.GONE
         myPage.visibility = if (page === myPage) View.VISIBLE else View.GONE
-        toolbar.title = when (page) {
+        toolbarTitle.text = when (page) {
             chatPage -> "消息"
             contactsPage -> "联系人"
             else -> "我的"

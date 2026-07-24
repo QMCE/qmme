@@ -17,7 +17,6 @@ import com.tencent.qqnt.kernelpublic.nativeinterface.Contact
 import mqq.app.AppRuntime
 import rj.qmme.kernel.KernelBridge
 import java.lang.reflect.Proxy
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * QMME adaptation of QMCE's ChatRepository.
@@ -204,10 +203,19 @@ class ChatRepository {
         elements: ArrayList<MsgElement>,
         callback: (errorCode: Int, errorMessage: String?) -> Unit,
     ): Boolean {
-        val service = KernelBridge.getKernelMsgService() ?: return false
+        val service = KernelBridge.getKernelMsgService()
+        if (service == null) {
+            Log.w(TAG, "sendMessage: kernel msg service unavailable (cache unowned or not ready)")
+            return false
+        }
+        Log.i(
+            TAG,
+            "sendMessage: dispatching elements=${elements.size} " +
+                "peer=${contact.peerUid} type=${contact.chatType}",
+        )
         return runCatching {
             service.sendMsg(
-                MESSAGE_UNIQUE_ID.incrementAndGet(),
+                0L,
                 contact,
                 elements,
                 hashMapOf<Int, MsgAttributeInfo>(),
@@ -344,6 +352,5 @@ class ChatRepository {
 
     private companion object {
         const val TAG = "QMME-Chat"
-        val MESSAGE_UNIQUE_ID = AtomicLong(System.currentTimeMillis())
     }
 }

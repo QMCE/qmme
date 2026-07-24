@@ -68,6 +68,24 @@ internal object EdgeToEdgeInsets {
         spacer.requestInsetsWhenAttached()
     }
 
+    /**
+     * Like [applyBottomInsetSpacer], but also grows to the IME height while the
+     * soft keyboard is open, so a composer sitting above this spacer lifts above
+     * the keyboard instead of being covered (edge-to-edge doesn't auto-resize).
+     */
+    fun applyBottomInsetSpacerWithIme(spacer: View) {
+        ViewCompat.setOnApplyWindowInsetsListener(spacer) { view, windowInsets ->
+            val bottom = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or
+                    WindowInsetsCompat.Type.displayCutout() or
+                    WindowInsetsCompat.Type.ime(),
+            ).bottom
+            view.setHeight(bottom)
+            windowInsets
+        }
+        spacer.requestInsetsWhenAttached()
+    }
+
     private fun WindowInsetsCompat.safeArea() =
         getInsets(
             WindowInsetsCompat.Type.systemBars() or

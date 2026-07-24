@@ -112,7 +112,7 @@ class ChatDetailHikagable(
                 buildAttachmentPanel()
                 HLinearLayout(
                     lparams = LayoutParams(widthMatchParent = true, height = 0),
-                    init = { EdgeToEdgeInsets.applyBottomInsetSpacer(this) },
+                    init = { EdgeToEdgeInsets.applyBottomInsetSpacerWithIme(this) },
                 )
             }
         }.also { cachedHikage = it }
