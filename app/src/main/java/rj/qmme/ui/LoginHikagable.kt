@@ -33,7 +33,7 @@ import com.google.android.material.button.MaterialButton as MaterialButtonView
 import com.google.android.material.imageview.ShapeableImageView as ShapeableImageViewView
 import com.google.android.material.progressindicator.CircularProgressIndicator as CircularProgressIndicatorView
 import com.google.android.material.textview.MaterialTextView as MaterialTextViewView
-import com.highcapable.hikage.annotation.Hikagable as HikagableAnnotation
+import com.highcapable.hikage.annotation.Hikagable
 
 /**
  * Complete login screen represented by a Hikage tree.
@@ -284,7 +284,7 @@ class LoginHikagable(
         scrollRoot.post { scrollRoot.scrollTo(0, 0) }
     }
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<AndroidLinearLayout.LayoutParams>.addLogo(sizeDp: Int) {
         ShapeableImageView(
             lparams = LayoutParams(width = dp(sizeDp), height = dp(sizeDp)) {
@@ -299,7 +299,7 @@ class LoginHikagable(
         addSpacer(14)
     }
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<AndroidLinearLayout.LayoutParams>.addTitle(text: String) {
         MaterialTextView(
             lparams = LayoutParams(widthMatchParent = true),
@@ -315,7 +315,7 @@ class LoginHikagable(
         addSpacer(8)
     }
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<AndroidLinearLayout.LayoutParams>.addBody(
         text: String,
         @Suppress("UNUSED_PARAMETER")
@@ -334,26 +334,26 @@ class LoginHikagable(
         )
     }
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<AndroidLinearLayout.LayoutParams>.addSpacer(dp: Int) {
         LinearLayout(
             lparams = LayoutParams(width = 1, height = dp(dp)),
         )
     }
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<AndroidLinearLayout.LayoutParams>.addPrimaryButton(
         text: String,
         onClick: () -> Unit,
     ): MaterialButtonView = addButton(text, onClick, primary = true)
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<AndroidLinearLayout.LayoutParams>.addSecondaryButton(
         text: String,
         onClick: () -> Unit,
     ): MaterialButtonView = addButton(text, onClick, primary = false)
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<AndroidLinearLayout.LayoutParams>.addButton(
         text: String,
         onClick: () -> Unit,

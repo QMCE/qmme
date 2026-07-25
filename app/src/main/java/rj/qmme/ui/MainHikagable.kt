@@ -54,7 +54,7 @@ import rj.qmme.kernel.KernelBridge
 import rj.qmme.runtime.RuntimeCoordinator
 import rj.qmme.viewmodel.ChatListViewModel
 import rj.qmme.viewmodel.ContactsViewModel
-import com.highcapable.hikage.annotation.Hikagable as HikagableAnnotation
+import com.highcapable.hikage.annotation.Hikagable
 
 /**
  * The whole signed-in surface is one native Hikage tree.  It deliberately
@@ -374,7 +374,7 @@ class MainHikagable(
             }
         }.also { cachedHikage = it }
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<FrameLayout.LayoutParams>.buildChatPage(): LinearLayout =
         LinearLayout(
             lparams = LayoutParams(matchParent = true),
@@ -436,7 +436,7 @@ class MainHikagable(
             }
         }
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<FrameLayout.LayoutParams>.buildContactsPage(): LinearLayout =
         LinearLayout(
             lparams = LayoutParams(matchParent = true),
@@ -530,7 +530,7 @@ class MainHikagable(
             }
         }
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<FrameLayout.LayoutParams>.buildMyPage(): ScrollView = ScrollView(
         lparams = LayoutParams(matchParent = true),
         init = {

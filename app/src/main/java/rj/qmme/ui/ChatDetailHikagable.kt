@@ -55,7 +55,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import rj.qmme.R
 import rj.qmme.viewmodel.ChatDetailViewModel
-import com.highcapable.hikage.annotation.Hikagable as HikagableAnnotation
+import com.highcapable.hikage.annotation.Hikagable
 
 /** Phone-first Material 3 Expressive chat screen, composed with Hikage Views. */
 class ChatDetailHikagable(
@@ -119,7 +119,7 @@ class ChatDetailHikagable(
             }
         }.also { cachedHikage = it }
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<LinearLayout.LayoutParams>.buildToolbar(): MaterialToolbar {
         toolbar = MaterialToolbar(
             lparams = LayoutParams(widthMatchParent = true),
@@ -145,7 +145,7 @@ class ChatDetailHikagable(
         return toolbar
     }
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<LinearLayout.LayoutParams>.buildStatusCard(): MaterialCardView {
         statusCard = MaterialCardView(
             lparams = LayoutParams(widthMatchParent = true) {
@@ -191,7 +191,7 @@ class ChatDetailHikagable(
         return statusCard
     }
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<LinearLayout.LayoutParams>.buildMessageArea(): FrameLayout =
         FrameLayout(
             lparams = LayoutParams(widthMatchParent = true, height = 0) { weight = 1f },
@@ -254,7 +254,7 @@ class ChatDetailHikagable(
             }
         }
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<LinearLayout.LayoutParams>.buildComposer(): MaterialCardView =
         MaterialCardView(
             lparams = LayoutParams(widthMatchParent = true) {
@@ -367,7 +367,7 @@ class ChatDetailHikagable(
             }
         }
 
-    @HikagableAnnotation
+    @Hikagable
     private fun Hikage.Performer<LinearLayout.LayoutParams>.buildAttachmentPanel(): LinearLayout {
         val panel = LinearLayout(
             lparams = LayoutParams(widthMatchParent = true),
