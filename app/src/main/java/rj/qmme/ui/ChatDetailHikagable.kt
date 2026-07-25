@@ -323,7 +323,7 @@ class ChatDetailHikagable(
                         maxLines = 5
                         minLines = 1
                         imeOptions = EditorInfo.IME_ACTION_SEND
-                        setSingleLine(false)
+                        isSingleLine = false
                         setPadding(dp(6), dp(12), dp(6), dp(12))
                         setOnEditorActionListener { _, actionId, _ ->
                             if (actionId == EditorInfo.IME_ACTION_SEND) {
