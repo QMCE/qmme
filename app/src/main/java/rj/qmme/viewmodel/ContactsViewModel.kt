@@ -43,6 +43,7 @@ class ContactsViewModel : ViewModel() {
         private const val TAG = "QMME-Contacts"
         private const val RETRY_DELAY_MS = 2_000L
         private const val SERVICE_WAIT_MS = 15_000L
+
         // The native buddy service may take longer to warm up. Keep that work
         // in the background, but do not hold pull-to-refresh captive to it.
         private const val REFRESH_INDICATOR_MAX_MS = 1_500L
@@ -130,7 +131,13 @@ class ContactsViewModel : ViewModel() {
                     // observable. Profile/UIN enrichment can otherwise race the
                     // lazy service cache on a cold watch start.
                     runCatching { KernelBridge.refreshCoreServices(actualRuntime) }
-                        .onFailure { Log.d(TAG, "refresh kernel services before contacts failed", it) }
+                        .onFailure {
+                            Log.d(
+                                TAG,
+                                "refresh kernel services before contacts failed",
+                                it
+                            )
+                        }
                     val categories = loadFromOfficialContactPipeline(
                         buddyService = buddyService,
                         contactService = contactService,
@@ -293,8 +300,8 @@ class ContactsViewModel : ViewModel() {
         }.onFailure { Log.w(TAG, "profile getUinByUid failed", it) }
             .getOrNull() ?: emptyMap()
         profileUins.forEach { (uid, uin) ->
-                if (uin > 0L) uins[uid] = uin
-            }
+            if (uin > 0L) uins[uid] = uin
+        }
 
         var current = buildCategories(categories, profiles, nickMap, remarkMap, uins)
         if (generation == loadGeneration.get()) {

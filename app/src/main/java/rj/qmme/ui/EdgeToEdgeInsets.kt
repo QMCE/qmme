@@ -78,8 +78,8 @@ internal object EdgeToEdgeInsets {
         ViewCompat.setOnApplyWindowInsetsListener(spacer) { view, windowInsets ->
             val bottom = windowInsets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or
-                    WindowInsetsCompat.Type.displayCutout() or
-                    WindowInsetsCompat.Type.ime(),
+                        WindowInsetsCompat.Type.displayCutout() or
+                        WindowInsetsCompat.Type.ime(),
             ).bottom
             view.setHeight(bottom)
             windowInsets
@@ -90,7 +90,7 @@ internal object EdgeToEdgeInsets {
     private fun WindowInsetsCompat.safeArea() =
         getInsets(
             WindowInsetsCompat.Type.systemBars() or
-                WindowInsetsCompat.Type.displayCutout(),
+                    WindowInsetsCompat.Type.displayCutout(),
         )
 
     private fun View.padding() = Padding(

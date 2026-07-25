@@ -115,7 +115,9 @@ object RuntimeCoordinator {
             val session = RuntimeSession(
                 generation = generationCounter.incrementAndGet(),
                 runtime = runtime,
-                processName = processName ?: lastProcessName ?: resolveProcessName(applicationContext),
+                processName = processName ?: lastProcessName ?: resolveProcessName(
+                    applicationContext
+                ),
                 accountUin = readCurrentUin(runtime),
             )
             currentSessionRef.set(session)
@@ -426,7 +428,8 @@ object RuntimeCoordinator {
         }
 
         return runCatching {
-            val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            val activityManager =
+                context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
             activityManager?.runningAppProcesses
                 ?.firstOrNull { it.pid == Process.myPid() }
                 ?.processName

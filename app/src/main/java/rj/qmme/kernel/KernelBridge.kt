@@ -40,23 +40,32 @@ object KernelBridge {
     // 全局服务缓存
     @Volatile
     private var cachedKs: IKernelService? = null
+
     @Volatile
     private var cachedMsgService: IMsgService? = null
+
     @Volatile
     private var cachedRecentService: IRecentContactService? = null
+
     @Volatile
     private var cachedBuddyService: IBuddyService? = null
+
     @Volatile
     private var cachedGroupService: IGroupService? = null
+
     /** Runtime ownership of the service cache; null means the cache is cold. */
     @Volatile
     private var cachedRuntimeSession: RuntimeSession? = null
+
     @Volatile
     private var directMsgWrapper: IMsgService? = null
+
     @Volatile
     private var directRecentWrapper: IRecentContactService? = null
+
     @Volatile
     private var officialMessageKernel: IMsgService? = null
+
     @Volatile
     private var officialMessageService: com.tencent.qqnt.msg.api.IMsgService? = null
     private val officialMessageLock = Any()
@@ -204,6 +213,7 @@ object KernelBridge {
         RuntimeCoordinator.currentRuntime(),
         "getMsgService",
     )
+
     fun getKernelMsgService(): IKernelMsgService? = runCatching {
         warnIfStaleCache("getKernelMsgService")
         val kernelService = cachedKernelServiceFor(
@@ -216,6 +226,7 @@ object KernelBridge {
             .get(kernelService) as? IQQNTWrapperSession
         wrapperSession?.msgService
     }.getOrNull()
+
     fun getRecentContactService(): IRecentContactService? =
         cachedServiceFor(
             cachedRecentService,
@@ -256,13 +267,15 @@ object KernelBridge {
         RuntimeCoordinator.currentRuntime(),
         "getGroupService",
     )
+
     fun ensureOfficialMessageBridge(
         runtimeOverride: AppRuntime? = null,
     ): com.tencent.qqnt.msg.api.IMsgService? {
         val runtime = runtimeOverride ?: QmmeApp.ensureRuntime()
-        val kernelService = cachedKernelServiceFor(runtime, "ensureOfficialMessageBridge") ?: runCatching {
-            runtime?.getRuntimeService(IKernelService::class.java, "")
-        }.getOrNull()
+        val kernelService =
+            cachedKernelServiceFor(runtime, "ensureOfficialMessageBridge") ?: runCatching {
+                runtime?.getRuntimeService(IKernelService::class.java, "")
+            }.getOrNull()
         val kernelMsgService = cachedServiceFor(
             cachedMsgService,
             runtime,
@@ -284,13 +297,17 @@ object KernelBridge {
                 messageBridge.init(kernelMsgService)
                 officialMessageKernel = kernelMsgService
                 officialMessageService = messageBridge
-                Log.d(TAG, "KernelBridge: official message bridge initialized service=$messageBridge")
+                Log.d(
+                    TAG,
+                    "KernelBridge: official message bridge initialized service=$messageBridge"
+                )
                 messageBridge
             }.onFailure { error ->
                 Log.w(TAG, "KernelBridge: official message bridge initialization failed", error)
             }.getOrNull()
         }
     }
+
     fun getSelfProfileService(): ISelfProfileRuntimeService? = runCatching {
         QmmeApp.ensureRuntime()
             ?.getRuntimeService(ISelfProfileRuntimeService::class.java, "")
@@ -303,13 +320,18 @@ object KernelBridge {
         val deadline = System.currentTimeMillis() + timeoutMillis
         while (System.currentTimeMillis() < deadline) {
             val runtime = runtimeOverride ?: QmmeApp.ensureRuntime()
-            val kernelService = cachedKernelServiceFor(runtime, "awaitCoreServices") ?: runCatching {
-                runtime?.getRuntimeService(IKernelService::class.java, "")
-            }.getOrNull()
+            val kernelService =
+                cachedKernelServiceFor(runtime, "awaitCoreServices") ?: runCatching {
+                    runtime?.getRuntimeService(IKernelService::class.java, "")
+                }.getOrNull()
             if (kernelService != null) {
                 cacheServices(kernelService, runtime, "awaitCoreServices")
                 if (cachedServiceFor(cachedMsgService, runtime, "awaitCoreServices.msg") != null &&
-                    cachedServiceFor(cachedRecentService, runtime, "awaitCoreServices.recent") != null
+                    cachedServiceFor(
+                        cachedRecentService,
+                        runtime,
+                        "awaitCoreServices.recent"
+                    ) != null
                 ) {
                     Log.d(TAG, "KernelBridge: core services ready")
                     return true
@@ -333,12 +355,17 @@ object KernelBridge {
         val deadline = System.currentTimeMillis() + timeoutMillis
         while (System.currentTimeMillis() < deadline) {
             val runtime = runtimeOverride ?: QmmeApp.ensureRuntime()
-            val kernelService = cachedKernelServiceFor(runtime, "awaitGroupService") ?: runCatching {
-                runtime?.getRuntimeService(IKernelService::class.java, "")
-            }.getOrNull()
+            val kernelService =
+                cachedKernelServiceFor(runtime, "awaitGroupService") ?: runCatching {
+                    runtime?.getRuntimeService(IKernelService::class.java, "")
+                }.getOrNull()
             if (kernelService != null) {
                 cacheServices(kernelService, runtime, "awaitGroupService")
-                cachedServiceFor(cachedGroupService, runtime, "awaitGroupService")?.let { return it }
+                cachedServiceFor(
+                    cachedGroupService,
+                    runtime,
+                    "awaitGroupService"
+                )?.let { return it }
             }
             Thread.sleep(250)
         }
@@ -653,8 +680,13 @@ object KernelBridge {
             Log.d(TAG, "login reinitialize: ON_KERNEL_INIT_COMPLETE sent")
         }.onFailure { Log.w(TAG, "login reinitialize: init broadcast failed", it) }
 
-        val ready = cachedServiceFor(cachedMsgService, runtime, "reinitializeAfterLogin.msg") != null &&
-                cachedServiceFor(cachedRecentService, runtime, "reinitializeAfterLogin.recent") != null
+        val ready =
+            cachedServiceFor(cachedMsgService, runtime, "reinitializeAfterLogin.msg") != null &&
+                    cachedServiceFor(
+                        cachedRecentService,
+                        runtime,
+                        "reinitializeAfterLogin.recent"
+                    ) != null
         if (ready) {
             RuntimeCoordinator.markKernelReady(
                 runtime = runtime,
@@ -696,7 +728,8 @@ object KernelBridge {
             if (!RuntimeCoordinator.isCurrent(runtime)) break
             last = readLoginTicketReadiness(runtime, uin)
             if (last.ready) {
-                val details = "runtimeIdentity=${System.identityHashCode(runtime)} ${last.diagnostics()}"
+                val details =
+                    "runtimeIdentity=${System.identityHashCode(runtime)} ${last.diagnostics()}"
                 Log.i(TAG, "bind: login ticket ready $details")
                 OfflineDiagnostics.record(
                     runtime.applicationContext,
@@ -763,6 +796,7 @@ object KernelBridge {
     }
 
     private val nativeKernelLibraryLock = Any()
+
     @Volatile
     private var nativeKernelLibrariesLoaded = false
 
@@ -811,7 +845,11 @@ object KernelBridge {
                 }
                 val runtime = RuntimeCoordinator.currentRuntime()
                 val context = runtime?.applicationContext
-                if (runtime == null || context == null || !ProjectKernelBootstrap.initialize(context, runtime)) {
+                if (runtime == null || context == null || !ProjectKernelBootstrap.initialize(
+                        context,
+                        runtime
+                    )
+                ) {
                     Log.e(TAG, "KernelBridge: project wrapper-engine bootstrap failed")
                     false
                 } else {
@@ -990,7 +1028,10 @@ object KernelBridge {
             )
             msfConnectionListener = listener
             msfConnectionBridgeRegistered = true
-            Log.d(TAG, "bind: direct MSF push servlet registered helper=$helper runtime=$ownerRuntime")
+            Log.d(
+                TAG,
+                "bind: direct MSF push servlet registered helper=$helper runtime=$ownerRuntime"
+            )
         }.onFailure { error ->
             Log.w(TAG, "bind: direct MSF push servlet unavailable", error)
         }

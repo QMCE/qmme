@@ -29,6 +29,7 @@ object OnlineStatus {
 
     @Volatile
     private var started = false
+
     @Volatile
     private var selfUid: String = ""
 
@@ -100,12 +101,12 @@ object OnlineStatus {
         val listenerType = IKernelProfileListener::class.java
         val method = profileService.javaClass.methods.firstOrNull { candidate ->
             candidate.name == "M" &&
-                candidate.parameterTypes.size == 1 &&
-                candidate.parameterTypes[0] == listenerType
+                    candidate.parameterTypes.size == 1 &&
+                    candidate.parameterTypes[0] == listenerType
         } ?: profileService.javaClass.declaredMethods.firstOrNull { candidate ->
             candidate.name == "M" &&
-                candidate.parameterTypes.size == 1 &&
-                candidate.parameterTypes[0] == listenerType
+                    candidate.parameterTypes.size == 1 &&
+                    candidate.parameterTypes[0] == listenerType
         } ?: throw NoSuchMethodException(
             "${profileService.javaClass.name}.M(${listenerType.name})",
         )

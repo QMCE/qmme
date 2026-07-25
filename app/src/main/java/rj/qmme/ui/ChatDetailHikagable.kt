@@ -173,7 +173,10 @@ class ChatDetailHikagable(
                     },
                 )
                 statusText = MaterialTextView(
-                    lparams = LayoutParams(width = 0, height = ViewGroup.LayoutParams.WRAP_CONTENT) {
+                    lparams = LayoutParams(
+                        width = 0,
+                        height = ViewGroup.LayoutParams.WRAP_CONTENT
+                    ) {
                         weight = 1f
                     },
                     init = {
@@ -306,7 +309,10 @@ class ChatDetailHikagable(
                     },
                 )
                 input = EditText(
-                    lparams = LayoutParams(width = 0, height = ViewGroup.LayoutParams.WRAP_CONTENT) {
+                    lparams = LayoutParams(
+                        width = 0,
+                        height = ViewGroup.LayoutParams.WRAP_CONTENT
+                    ) {
                         weight = 1f
                         gravity = Gravity.CENTER_VERTICAL
                     },
@@ -393,7 +399,7 @@ class ChatDetailHikagable(
                         gravity = Gravity.CENTER_HORIZONTAL
                     },
                     init = {
-                    icon = drawableResource(R.drawable.ic_image)
+                        icon = drawableResource(R.drawable.ic_image)
                         iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
                         iconPadding = 0
                         text = ""

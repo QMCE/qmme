@@ -28,7 +28,11 @@ object OfflineDiagnostics {
         val line = buildString {
             append(formatter.format(Date()))
             append(" pid=").append(Process.myPid())
-            append(" process=").append(runCatching { QmmeApp.currentProcessNameByActivityThread }.getOrDefault("unknown"))
+            append(" process=").append(
+                runCatching { QmmeApp.currentProcessNameByActivityThread }.getOrDefault(
+                    "unknown"
+                )
+            )
             append(" thread=").append(Thread.currentThread().name.replace(' ', '_'))
             append(" event=").append(sanitize(event))
             if (details.isNotBlank()) append(' ').append(sanitize(details))

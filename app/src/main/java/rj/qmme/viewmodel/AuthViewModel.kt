@@ -37,6 +37,7 @@ class AuthViewModel : ViewModel() {
 
     companion object {
         private const val TAG = "QMME"
+
         // Must match AppSetting.a from the embedded QQ Watch 9.0.7 runtime.
         private const val LOGIN_APP_ID = 537282233
         private const val SERVICE_INIT_TIMEOUT_MS = 12_000L
@@ -123,7 +124,11 @@ class AuthViewModel : ViewModel() {
 
             setState(LoginUiState.RequestingQr, "正在获取二维码", busy = true)
             appendLog(
-                "runtime=${services.runtime.javaClass.name} running=${runCatching { services.runtime.isRunning }.getOrDefault(false)} " +
+                "runtime=${services.runtime.javaClass.name} running=${
+                    runCatching { services.runtime.isRunning }.getOrDefault(
+                        false
+                    )
+                } " +
                         "service=${runCatching { services.runtime.service }.getOrNull()} " +
                         "wt=${services.wtService.javaClass.name}"
             )

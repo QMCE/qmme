@@ -50,6 +50,7 @@ class ChatListViewModel : ViewModel() {
         private const val POLL_ATTEMPTS = 120 // 60 seconds
         private const val SERVICE_REFRESH_EVERY = 5
         private const val RETRY_DELAY_MS = 2_000L
+
         /** Refresh animation is only for dispatching a new native query, not for
          * the long-lived background polling that follows cold NT startup. */
         private const val REFRESH_INDICATOR_MIN_MS = 350L
@@ -166,9 +167,10 @@ class ChatListViewModel : ViewModel() {
                 // awaitRecentContactService() may poll during an NT cold start,
                 // and keeping the indicator attached to that 60 s recovery loop
                 // made a normal refresh appear permanently stuck.
-                val current = recentService ?: withTimeoutOrNull(REFRESH_SERVICE_LOOKUP_TIMEOUT_MS.milliseconds) {
-                    awaitRecentContactService(runtime)
-                }
+                val current = recentService
+                    ?: withTimeoutOrNull(REFRESH_SERVICE_LOOKUP_TIMEOUT_MS.milliseconds) {
+                        awaitRecentContactService(runtime)
+                    }
                 if (current != null) {
                     recentService = current
                     registerRecentListener(current)
@@ -460,9 +462,9 @@ class ChatListViewModel : ViewModel() {
         if (!KernelBridge.isNativeServiceReady(service)) return null
         return runCatching {
             val nativeService = service.javaClass.methods.firstOrNull {
-                        it.name == "getService" && it.parameterTypes.isEmpty()
-                    }?.invoke(service) ?: findNativeDelegateField(service)
-                ?: return@runCatching null
+                it.name == "getService" && it.parameterTypes.isEmpty()
+            }?.invoke(service) ?: findNativeDelegateField(service)
+            ?: return@runCatching null
             val syncMethod = nativeService.javaClass.methods.firstOrNull {
                 it.name == "getRecentContactListSync" && it.parameterTypes.isEmpty()
             } ?: error("native getRecentContactListSync() unavailable")

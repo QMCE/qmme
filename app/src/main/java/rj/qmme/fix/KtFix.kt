@@ -23,16 +23,24 @@ object KtFix {
     fun newRegex(pattern: String): Regex = Regex(pattern)
 
     @JvmStatic
-    fun `find$default`(regex: Regex, input: CharSequence, startIndex: Int, mask: Int, marker: Any?): MatchResult? {
+    fun `find$default`(
+        regex: Regex,
+        input: CharSequence,
+        startIndex: Int,
+        mask: Int,
+        marker: Any?
+    ): MatchResult? {
         val actualStartIndex = if ((mask and 2) != 0) 0 else startIndex
         return regex.find(input, actualStartIndex)
     }
 
     @JvmStatic
-    fun replace(regex: Regex, input: CharSequence, replacement: String): String = regex.replace(input, replacement)
+    fun replace(regex: Regex, input: CharSequence, replacement: String): String =
+        regex.replace(input, replacement)
 
     @JvmStatic
-    fun split(regex: Regex, input: CharSequence, limit: Int): List<String> = regex.split(input, limit)
+    fun split(regex: Regex, input: CharSequence, limit: Int): List<String> =
+        regex.split(input, limit)
 
     @JvmStatic
     fun getValue(matchResult: MatchResult): String = matchResult.value
@@ -53,7 +61,13 @@ object KtFix {
     fun decodeToString(value: ByteArray): String = value.decodeToString()
 
     @JvmStatic
-    fun `endsWith$default`(value: String, suffix: String, ignoreCase: Boolean, mask: Int, marker: Any?): Boolean {
+    fun `endsWith$default`(
+        value: String,
+        suffix: String,
+        ignoreCase: Boolean,
+        mask: Int,
+        marker: Any?
+    ): Boolean {
         val actualIgnoreCase = if ((mask and 2) != 0) false else ignoreCase
         return value.endsWith(suffix, actualIgnoreCase)
     }
@@ -62,7 +76,13 @@ object KtFix {
     fun equals(a: String?, b: String?, ignoreCase: Boolean): Boolean = a.equals(b, ignoreCase)
 
     @JvmStatic
-    fun `equals$default`(a: String?, b: String?, ignoreCase: Boolean, mask: Int, marker: Any?): Boolean {
+    fun `equals$default`(
+        a: String?,
+        b: String?,
+        ignoreCase: Boolean,
+        mask: Int,
+        marker: Any?
+    ): Boolean {
         val actualIgnoreCase = if ((mask and 2) != 0) false else ignoreCase
         return a.equals(b, actualIgnoreCase)
     }
@@ -84,32 +104,64 @@ object KtFix {
     }
 
     @JvmStatic
-    fun `startsWith$default`(value: String, prefix: String, ignoreCase: Boolean, mask: Int, marker: Any?): Boolean {
+    fun `startsWith$default`(
+        value: String,
+        prefix: String,
+        ignoreCase: Boolean,
+        mask: Int,
+        marker: Any?
+    ): Boolean {
         val actualIgnoreCase = if ((mask and 2) != 0) false else ignoreCase
         return value.startsWith(prefix, actualIgnoreCase)
     }
 
     @JvmStatic
-    fun `contains$default`(value: CharSequence, other: Char, ignoreCase: Boolean, mask: Int, marker: Any?): Boolean {
+    fun `contains$default`(
+        value: CharSequence,
+        other: Char,
+        ignoreCase: Boolean,
+        mask: Int,
+        marker: Any?
+    ): Boolean {
         val actualIgnoreCase = if ((mask and 2) != 0) false else ignoreCase
         return value.contains(other, actualIgnoreCase)
     }
 
     @JvmStatic
-    fun `contains$default`(value: CharSequence, other: CharSequence, ignoreCase: Boolean, mask: Int, marker: Any?): Boolean {
+    fun `contains$default`(
+        value: CharSequence,
+        other: CharSequence,
+        ignoreCase: Boolean,
+        mask: Int,
+        marker: Any?
+    ): Boolean {
         val actualIgnoreCase = if ((mask and 2) != 0) false else ignoreCase
         return value.contains(other, actualIgnoreCase)
     }
 
     @JvmStatic
-    fun `indexOf$default`(value: CharSequence, char: Char, startIndex: Int, ignoreCase: Boolean, mask: Int, marker: Any?): Int {
+    fun `indexOf$default`(
+        value: CharSequence,
+        char: Char,
+        startIndex: Int,
+        ignoreCase: Boolean,
+        mask: Int,
+        marker: Any?
+    ): Int {
         val actualStartIndex = if ((mask and 2) != 0) 0 else startIndex
         val actualIgnoreCase = if ((mask and 4) != 0) false else ignoreCase
         return value.indexOf(char, actualStartIndex, actualIgnoreCase)
     }
 
     @JvmStatic
-    fun `indexOf$default`(value: CharSequence, string: String, startIndex: Int, ignoreCase: Boolean, mask: Int, marker: Any?): Int {
+    fun `indexOf$default`(
+        value: CharSequence,
+        string: String,
+        startIndex: Int,
+        ignoreCase: Boolean,
+        mask: Int,
+        marker: Any?
+    ): Int {
         val actualStartIndex = if ((mask and 2) != 0) 0 else startIndex
         val actualIgnoreCase = if ((mask and 4) != 0) false else ignoreCase
         return value.indexOf(string, actualStartIndex, actualIgnoreCase)
@@ -119,14 +171,28 @@ object KtFix {
     fun iterator(value: CharSequence): CharIterator = value.iterator()
 
     @JvmStatic
-    fun `lastIndexOf$default`(value: CharSequence, char: Char, startIndex: Int, ignoreCase: Boolean, mask: Int, marker: Any?): Int {
+    fun `lastIndexOf$default`(
+        value: CharSequence,
+        char: Char,
+        startIndex: Int,
+        ignoreCase: Boolean,
+        mask: Int,
+        marker: Any?
+    ): Int {
         val actualStartIndex = if ((mask and 2) != 0) value.length - 1 else startIndex
         val actualIgnoreCase = if ((mask and 4) != 0) false else ignoreCase
         return value.lastIndexOf(char, actualStartIndex, actualIgnoreCase)
     }
 
     @JvmStatic
-    fun `lastIndexOf$default`(value: CharSequence, string: String, startIndex: Int, ignoreCase: Boolean, mask: Int, marker: Any?): Int {
+    fun `lastIndexOf$default`(
+        value: CharSequence,
+        string: String,
+        startIndex: Int,
+        ignoreCase: Boolean,
+        mask: Int,
+        marker: Any?
+    ): Int {
         val actualStartIndex = if ((mask and 2) != 0) value.length - 1 else startIndex
         val actualIgnoreCase = if ((mask and 4) != 0) false else ignoreCase
         return value.lastIndexOf(string, actualStartIndex, actualIgnoreCase)
@@ -167,7 +233,13 @@ object KtFix {
     }
 
     @JvmStatic
-    fun `substringBeforeLast$default`(value: String, delimiter: Char, missingDelimiterValue: String, mask: Int, marker: Any?): String {
+    fun `substringBeforeLast$default`(
+        value: String,
+        delimiter: Char,
+        missingDelimiterValue: String,
+        mask: Int,
+        marker: Any?
+    ): String {
         val actualMissingDelimiterValue = if ((mask and 2) != 0) value else missingDelimiterValue
         return value.substringBeforeLast(delimiter, actualMissingDelimiterValue)
     }
@@ -209,7 +281,8 @@ object KtFix {
     }
 
     @JvmStatic
-    fun getOrNull(array: Array<Any?>, index: Int): Any? = if (index in array.indices) array[index] else null
+    fun getOrNull(array: Array<Any?>, index: Int): Any? =
+        if (index in array.indices) array[index] else null
 
     @JvmStatic
     fun `joinToString$default`(
@@ -229,7 +302,15 @@ object KtFix {
         val actualLimit = if ((mask and 8) != 0) -1 else limit
         val actualTruncated = if ((mask and 16) != 0) "..." else truncated ?: "null"
         val actualTransform = if ((mask and 32) != 0) null else transform
-        return joinArray(array.asIterable(), actualSeparator, actualPrefix, actualPostfix, actualLimit, actualTruncated, actualTransform)
+        return joinArray(
+            array.asIterable(),
+            actualSeparator,
+            actualPrefix,
+            actualPostfix,
+            actualLimit,
+            actualTruncated,
+            actualTransform
+        )
     }
 
     @JvmStatic
@@ -250,11 +331,22 @@ object KtFix {
         val actualLimit = if ((mask and 8) != 0) -1 else limit
         val actualTruncated = if ((mask and 16) != 0) "..." else truncated ?: "null"
         val actualTransform = if ((mask and 32) != 0) null else transform
-        return joinArray(array.asIterable(), actualSeparator, actualPrefix, actualPostfix, actualLimit, actualTruncated, actualTransform)
+        return joinArray(
+            array.asIterable(),
+            actualSeparator,
+            actualPrefix,
+            actualPostfix,
+            actualLimit,
+            actualTruncated,
+            actualTransform
+        )
     }
 
     @JvmStatic
-    fun toCollection(array: Array<Any?>, destination: MutableCollection<Any?>): MutableCollection<Any?> {
+    fun toCollection(
+        array: Array<Any?>,
+        destination: MutableCollection<Any?>
+    ): MutableCollection<Any?> {
         for (e in array) destination.add(e)
         return destination
     }
@@ -288,7 +380,8 @@ object KtFix {
     fun throwIndexOverflow(): Nothing = throw ArithmeticException("Index overflow has happened.")
 
     @JvmStatic
-    fun collectionSizeOrDefault(iterable: Iterable<Any?>, default: Int): Int = if (iterable is Collection<*>) iterable.size else default
+    fun collectionSizeOrDefault(iterable: Iterable<Any?>, default: Int): Int =
+        if (iterable is Collection<*>) iterable.size else default
 
     @JvmStatic
     fun flatten(iterable: Iterable<Iterable<Any?>>): List<Any?> {
@@ -320,7 +413,8 @@ object KtFix {
     fun reverse(list: MutableList<Any?>) = list.reverse()
 
     @JvmStatic
-    fun distinct(iterable: Iterable<Any?>): List<Any?> = ArrayList(java.util.LinkedHashSet<Any?>(toMutableListFromIterable(iterable)))
+    fun distinct(iterable: Iterable<Any?>): List<Any?> =
+        ArrayList(java.util.LinkedHashSet<Any?>(toMutableListFromIterable(iterable)))
 
     @JvmStatic
     fun filterNotNull(iterable: Iterable<Any?>): List<Any> {
@@ -347,7 +441,8 @@ object KtFix {
     fun firstOrNull(list: List<Any?>): Any? = if (list.isEmpty()) null else list[0]
 
     @JvmStatic
-    fun getOrNull(list: List<Any?>, index: Int): Any? = if (index >= 0 && index <= list.size - 1) list[index] else null
+    fun getOrNull(list: List<Any?>, index: Int): Any? =
+        if (index >= 0 && index <= list.size - 1) list[index] else null
 
     @JvmStatic
     fun intersect(iterable: Iterable<Any?>, other: Iterable<Any?>): Set<Any?> {
@@ -374,7 +469,15 @@ object KtFix {
         val actualLimit = if ((mask and 8) != 0) -1 else limit
         val actualTruncated = if ((mask and 16) != 0) "..." else truncated ?: "null"
         val actualTransform = if ((mask and 32) != 0) null else transform
-        return joinArray(iterable, actualSeparator, actualPrefix, actualPostfix, actualLimit, actualTruncated, actualTransform)
+        return joinArray(
+            iterable,
+            actualSeparator,
+            actualPrefix,
+            actualPostfix,
+            actualLimit,
+            actualTruncated,
+            actualTransform
+        )
     }
 
     @JvmStatic
@@ -465,7 +568,8 @@ object KtFix {
     }
 
     @JvmStatic
-    fun toHashSet(iterable: Iterable<Any?>): HashSet<Any?> = HashSet(toMutableListFromIterable(iterable))
+    fun toHashSet(iterable: Iterable<Any?>): HashSet<Any?> =
+        HashSet(toMutableListFromIterable(iterable))
 
     @JvmStatic
     fun toIntArray(collection: Collection<Int>): IntArray {
@@ -488,6 +592,7 @@ object KtFix {
             1 -> java.util.Collections.singleton(iterable.iterator().next())
             else -> java.util.LinkedHashSet(iterable)
         }
+
         else -> toMutableSetFromIterable(iterable)
     }
 
@@ -508,7 +613,8 @@ object KtFix {
     }
 
     @JvmStatic
-    fun mapOf(pair: Pair<Any?, Any?>): Map<Any?, Any?> = java.util.Collections.singletonMap(pair.first, pair.second)
+    fun mapOf(pair: Pair<Any?, Any?>): Map<Any?, Any?> =
+        java.util.Collections.singletonMap(pair.first, pair.second)
 
     @JvmStatic
     fun emptyMap(): Map<Any?, Any?> = java.util.Collections.emptyMap()
@@ -545,7 +651,11 @@ object KtFix {
     @JvmStatic
     fun toMap(map: Map<Any?, Any?>): Map<Any?, Any?> = when (map.size) {
         0 -> emptyMap()
-        1 -> java.util.Collections.singletonMap(map.entries.iterator().next().key, map.entries.iterator().next().value)
+        1 -> java.util.Collections.singletonMap(
+            map.entries.iterator().next().key,
+            map.entries.iterator().next().value
+        )
+
         else -> java.util.LinkedHashMap(map)
     }
 
@@ -559,7 +669,8 @@ object KtFix {
     fun hashSetOf(elements: Array<Any?>): HashSet<Any?> = HashSet(listOf(*elements))
 
     @JvmStatic
-    fun mutableSetOf(elements: Array<Any?>): MutableSet<Any?> = java.util.LinkedHashSet(listOf(*elements))
+    fun mutableSetOf(elements: Array<Any?>): MutableSet<Any?> =
+        java.util.LinkedHashSet(listOf(*elements))
 
     @JvmStatic
     fun setOf(elements: Array<Any?>): Set<Any?> = when (elements.size) {
@@ -624,7 +735,8 @@ object KtFix {
     }
 
     @JvmStatic
-    fun lazy(mode: LazyThreadSafetyMode, initializer: () -> Any?): Lazy<Any?> = kotlin.lazy(mode, initializer)
+    fun lazy(mode: LazyThreadSafetyMode, initializer: () -> Any?): Lazy<Any?> =
+        kotlin.lazy(mode, initializer)
 
     @JvmStatic
     fun lazy(initializer: () -> Any?): Lazy<Any?> = kotlin.lazy(initializer)
@@ -649,13 +761,26 @@ object KtFix {
 
     @JvmStatic
     fun getProgressionLastElement(start: Int, end: Int, step: Int): Int {
-        fun mod(a: Int, b: Int): Int { val r = a % b; return if (r >= 0) r else r + b }
+        fun mod(a: Int, b: Int): Int {
+            val r = a % b; return if (r >= 0) r else r + b
+        }
+
         fun differenceModulo(a: Int, b: Int, c: Int): Int = mod(mod(a, c) - mod(b, c), c)
-        return if (step > 0) end - differenceModulo(end, start, step) else end + differenceModulo(start, end, -step)
+        return if (step > 0) end - differenceModulo(end, start, step) else end + differenceModulo(
+            start,
+            end,
+            -step
+        )
     }
 
     @JvmStatic
-    fun `copyTo$default`(input: java.io.InputStream, out: java.io.OutputStream, bufferSize: Int, mask: Int, marker: Any?): Long {
+    fun `copyTo$default`(
+        input: java.io.InputStream,
+        out: java.io.OutputStream,
+        bufferSize: Int,
+        mask: Int,
+        marker: Any?
+    ): Long {
         val actualBufferSize = if ((mask and 2) != 0) DEFAULT_BUFFER_SIZE else bufferSize
         val buffer = ByteArray(actualBufferSize)
         var bytes = input.read(buffer)
@@ -694,11 +819,23 @@ object KtFix {
         val actualOverwrite = if ((mask and 2) != 0) false else overwrite
         val actualBufferSize = if ((mask and 4) != 0) DEFAULT_BUFFER_SIZE else bufferSize
         if (target.exists()) {
-            if (!actualOverwrite) throw FileAlreadyExistsException(from, target, "The destination file already exists.")
-            if (!target.delete()) throw FileAlreadyExistsException(from, target, "Tried to overwrite the destination, but failed to delete it.")
+            if (!actualOverwrite) throw FileAlreadyExistsException(
+                from,
+                target,
+                "The destination file already exists."
+            )
+            if (!target.delete()) throw FileAlreadyExistsException(
+                from,
+                target,
+                "Tried to overwrite the destination, but failed to delete it."
+            )
         }
         if (from.isDirectory) {
-            if (!target.mkdirs()) throw FileSystemException(from, target, "Failed to create target directory.")
+            if (!target.mkdirs()) throw FileSystemException(
+                from,
+                target,
+                "Failed to create target directory."
+            )
         } else {
             target.parentFile?.mkdirs()
             java.io.FileInputStream(from).use { input ->
@@ -736,19 +873,24 @@ object KtFix {
     }
 
     @JvmStatic
-    fun coerceAtLeast(value: Float, minimumValue: Float): Float = if (value < minimumValue) minimumValue else value
+    fun coerceAtLeast(value: Float, minimumValue: Float): Float =
+        if (value < minimumValue) minimumValue else value
 
     @JvmStatic
-    fun coerceAtLeast(value: Int, minimumValue: Int): Int = if (value < minimumValue) minimumValue else value
+    fun coerceAtLeast(value: Int, minimumValue: Int): Int =
+        if (value < minimumValue) minimumValue else value
 
     @JvmStatic
-    fun coerceAtMost(value: Float, maximumValue: Float): Float = if (value > maximumValue) maximumValue else value
+    fun coerceAtMost(value: Float, maximumValue: Float): Float =
+        if (value > maximumValue) maximumValue else value
 
     @JvmStatic
-    fun coerceAtMost(value: Int, maximumValue: Int): Int = if (value > maximumValue) maximumValue else value
+    fun coerceAtMost(value: Int, maximumValue: Int): Int =
+        if (value > maximumValue) maximumValue else value
 
     @JvmStatic
-    fun coerceAtMost(value: Long, maximumValue: Long): Long = if (value > maximumValue) maximumValue else value
+    fun coerceAtMost(value: Long, maximumValue: Long): Long =
+        if (value > maximumValue) maximumValue else value
 
     @JvmStatic
     fun coerceIn(value: Double, minimumValue: Double, maximumValue: Double): Double {

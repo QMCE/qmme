@@ -426,7 +426,10 @@ internal object AvatarLoader {
             connection.readTimeout = READ_TIMEOUT_MS
             connection.instanceFollowRedirects = true
             connection.useCaches = true
-            connection.setRequestProperty("Accept", "image/avif,image/webp,image/png,image/jpeg,*/*")
+            connection.setRequestProperty(
+                "Accept",
+                "image/avif,image/webp,image/png,image/jpeg,*/*"
+            )
             connection.setRequestProperty("User-Agent", "QMME/1.0 Android")
             val code = connection.responseCode
             if (code !in 200..299) {

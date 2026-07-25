@@ -2,9 +2,9 @@ package rj.qmme.data.media
 
 import android.content.ContentValues
 import android.content.Context
-import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.core.net.toUri
 import com.highcapable.betterandroid.system.extension.utils.AndroidVersion
 import kotlinx.coroutines.CancellationException
 import java.io.File
@@ -14,7 +14,6 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.core.net.toUri
 
 /** Saves a local or remote image into the user's Pictures/QMME collection. */
 class MediaStoreSaver {

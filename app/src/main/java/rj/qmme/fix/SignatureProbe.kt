@@ -11,17 +11,25 @@ object SignatureProbe {
     fun dump(context: Context) {
         runCatching {
             @Suppress("DEPRECATION")
-            val pi = context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
+            val pi = context.packageManager.getPackageInfo(
+                context.packageName,
+                PackageManager.GET_SIGNATURES
+            )
+
             @Suppress("DEPRECATION")
             val sig = pi.signatures?.firstOrNull()
             val md5Bytes = sig?.toByteArray()?.let { md5Hex(it) }
             val md5Chars = sig?.toCharsString()?.let { md5Hex(it.toByteArray()) }
-            Log.d("QMME-Sign", "pm pkg=${context.packageName} version=${pi.versionName} sigBytesMd5=$md5Bytes sigCharsMd5=$md5Chars sigLen=${sig?.toByteArray()?.size}")
+            Log.d(
+                "QMME-Sign",
+                "pm pkg=${context.packageName} version=${pi.versionName} sigBytesMd5=$md5Bytes sigCharsMd5=$md5Chars sigLen=${sig?.toByteArray()?.size}"
+            )
         }.onFailure { Log.e("QMME-Sign", "pm dump failed", it) }
         runCatching {
             val apkId = util.get_apk_id(context).toString(Charsets.UTF_8)
             val apkV = util.get_apk_v(context, apkId).toString(Charsets.UTF_8)
-            val pkgSig = util.getPkgSigFromApkName(context, context.packageName).joinToString("") { "%02x".format(it) }
+            val pkgSig = util.getPkgSigFromApkName(context, context.packageName)
+                .joinToString("") { "%02x".format(it) }
             Log.d("QMME-Sign", "wlogin apkId=$apkId apkV=$apkV pkgSigMd5Bytes=$pkgSig")
         }.onFailure { Log.e("QMME-Sign", "wlogin dump failed", it) }
     }

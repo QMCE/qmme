@@ -27,11 +27,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var screenHost: FrameLayout
     private lateinit var navigator: ViewNavigator
     private var pendingImageViewModel: ChatDetailViewModel? = null
-    private val imagePicker = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        val viewModel = pendingImageViewModel
-        pendingImageViewModel = null
-        if (uri != null && viewModel != null) viewModel.sendImage(this, uri)
-    }
+    private val imagePicker =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            val viewModel = pendingImageViewModel
+            pendingImageViewModel = null
+            if (uri != null && viewModel != null) viewModel.sendImage(this, uri)
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -101,7 +102,8 @@ class MainActivity : AppCompatActivity() {
                         chatType = 1,
                         peerUid = buddy.uid.ifBlank { buddy.uin.toString() },
                         peerUin = buddy.uin,
-                        title = buddy.remark.ifBlank { buddy.nick }.ifBlank { buddy.uin.toString() },
+                        title = buddy.remark.ifBlank { buddy.nick }
+                            .ifBlank { buddy.uin.toString() },
                         avatarPath = buddy.avatarPath,
                         avatarUrl = buddy.avatarUrls.firstOrNull().orEmpty(),
                     ),

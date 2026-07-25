@@ -4,7 +4,7 @@ import android.content.Context;
 
 /**
  * Compatibility stub for the BoostMultiDex call retained in WatchApplicationDelegate.
- *
+ * <p>
  * The app installs AndroidX MultiDex itself after the delegate returns, so the
  * ByteDance startup optimization is intentionally disabled here.
  */

@@ -21,7 +21,8 @@ final class ProjectKernelDeviceInfo {
     private static final String TAG = "QMME";
     private static final String CLIENT_BUILD = "9.0.7.2563";
 
-    private ProjectKernelDeviceInfo() {}
+    private ProjectKernelDeviceInfo() {
+    }
 
     static DeviceInfo safeCreate(Context context, AppRuntime runtime) {
         try {

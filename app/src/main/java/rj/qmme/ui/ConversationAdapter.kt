@@ -93,11 +93,19 @@ class ConversationAdapter(
                                 // Keep the timestamp's top edge in the same band as
                                 // the title whether or not the unread badge exists.
                                 gravity = Gravity.TOP
-                                setPadding(dp(parent, 12), dp(parent, 10), dp(parent, 12), dp(parent, 10))
+                                setPadding(
+                                    dp(parent, 12),
+                                    dp(parent, 10),
+                                    dp(parent, 12),
+                                    dp(parent, 10)
+                                )
                             },
                         ) {
                             avatar = ShapeableImageView(
-                                lparams = LayoutParams(width = dp(parent, 46), height = dp(parent, 46)),
+                                lparams = LayoutParams(
+                                    width = dp(parent, 46),
+                                    height = dp(parent, 46)
+                                ),
                                 init = {
                                     setImageResource(R.drawable.ic_launcher_foreground)
                                     AvatarLoader.makeCircular(this)

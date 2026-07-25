@@ -39,7 +39,8 @@ final class ProjectKernelBootstrap {
     private static final String CLIENT_BUILD = "9.0.7.2563";
     private static final String QUA = "V1_WAT_SQ_9.0.7_0_IDC_B";
 
-    private ProjectKernelBootstrap() {}
+    private ProjectKernelBootstrap() {
+    }
 
     static boolean initialize(Context context, AppRuntime runtime) {
         if (context == null || runtime == null) {
@@ -102,14 +103,33 @@ final class ProjectKernelBootstrap {
             this.deviceInfo = ProjectKernelDeviceInfo.safeCreate(context, runtime);
         }
 
-        @Override public AvifTranscodeResult avifTranscodeJpgAndGenAIOThumb(int type, AvifTranscodeInfo info) {
+        @Override
+        public AvifTranscodeResult avifTranscodeJpgAndGenAIOThumb(int type, AvifTranscodeInfo info) {
             return new AvifTranscodeResult();
         }
-        @Override public Integer fixPicImgType(String path) { return -1; }
-        @Override public Boolean generatePicAioThumb(String source, String target) { return Boolean.TRUE; }
-        @Override public Boolean generateThumb(String source, String target, int width, int height) { return Boolean.TRUE; }
-        @Override public Integer getActiveIPStackType() { return 3; }
-        @Override public AppSetting getAppSetting() {
+
+        @Override
+        public Integer fixPicImgType(String path) {
+            return -1;
+        }
+
+        @Override
+        public Boolean generatePicAioThumb(String source, String target) {
+            return Boolean.TRUE;
+        }
+
+        @Override
+        public Boolean generateThumb(String source, String target, int width, int height) {
+            return Boolean.TRUE;
+        }
+
+        @Override
+        public Integer getActiveIPStackType() {
+            return 3;
+        }
+
+        @Override
+        public AppSetting getAppSetting() {
             return new AppSetting(
                     com.tencent.qphone.base.util.QLog.isColorLevel(),
                     false,
@@ -117,22 +137,55 @@ final class ProjectKernelBootstrap {
                     true
             );
         }
-        @Override public DeviceCodecFormatInfo getDeviceCodecFormatInfo() { return new DeviceCodecFormatInfo(); }
-        @Override public DeviceInfo getDeviceInfo() {
+
+        @Override
+        public DeviceCodecFormatInfo getDeviceCodecFormatInfo() {
+            return new DeviceCodecFormatInfo();
+        }
+
+        @Override
+        public DeviceInfo getDeviceInfo() {
             // Keep the field order identical to the official Watch adapter:
             // buildVer, devName, localId, devType, guid, osVer, vendorName,
             // vendorOsName, setMute, vendorType.  Passing these in a guessed
             // order makes native device serialization subtly invalid.
             return deviceInfo;
         }
-        @Override public Integer getMSFUsedIpProtocolType() { return 0; }
-        @Override public RichMediaImgSize getRichMediaImgSize(String path, int type) { return new RichMediaImgSize(0, 0); }
-        @Override public IOperateResult onCompressVideo(String source, String target) { return null; }
-        @Override public void onDataReport(String category, String event, boolean realtime, HashMap<String, String> data, boolean encrypted) { }
-        @Override public void onDataReportWithAppKey(String appKey, String category, String event, boolean realtime, HashMap<String, String> data, boolean encrypted) { }
-        @Override public OpentelemetryTracePlan onGetMqqOpentelemetryTraceReportPlan() { return null; }
-        @Override public void onGetOfflineMsg() { }
-        @Override public Long onGetSrvCalTime() {
+
+        @Override
+        public Integer getMSFUsedIpProtocolType() {
+            return 0;
+        }
+
+        @Override
+        public RichMediaImgSize getRichMediaImgSize(String path, int type) {
+            return new RichMediaImgSize(0, 0);
+        }
+
+        @Override
+        public IOperateResult onCompressVideo(String source, String target) {
+            return null;
+        }
+
+        @Override
+        public void onDataReport(String category, String event, boolean realtime, HashMap<String, String> data, boolean encrypted) {
+        }
+
+        @Override
+        public void onDataReportWithAppKey(String appKey, String category, String event, boolean realtime, HashMap<String, String> data, boolean encrypted) {
+        }
+
+        @Override
+        public OpentelemetryTracePlan onGetMqqOpentelemetryTraceReportPlan() {
+            return null;
+        }
+
+        @Override
+        public void onGetOfflineMsg() {
+        }
+
+        @Override
+        public Long onGetSrvCalTime() {
             try {
                 return NetConnInfoCenter.getServerTimeMillis();
             } catch (Throwable error) {
@@ -140,24 +193,47 @@ final class ProjectKernelBootstrap {
                 return System.currentTimeMillis();
             }
         }
-        @Override public void onInstallFinished(boolean success) { Log.d(TAG, "KernelBootstrap: native install finished=" + success); }
-        @Override public void onLog(int level, String message) {
+
+        @Override
+        public void onInstallFinished(boolean success) {
+            Log.d(TAG, "KernelBootstrap: native install finished=" + success);
+        }
+
+        @Override
+        public void onLog(int level, String message) {
             if (message != null && level <= 1) Log.d(TAG, "KernelNative: " + message);
         }
-        @Override public MarkdownParseRsp onParseMarkdown(MarkdownParseReq request) { return new MarkdownParseRsp(); }
-        @Override public void onRegisterCountInstruments(ArrayList<String> names, int type, int source) { }
-        @Override public void onRegisterValueInstruments(ArrayList<String> names, ArrayList<Double> values, int type, int source) { }
-        @Override public void onReportCountIndicators(HashMap<String, String> data, String name, long value) { }
-        @Override public void onReportValueIndicators(HashMap<String, String> data, String name, double value) { }
+
+        @Override
+        public MarkdownParseRsp onParseMarkdown(MarkdownParseReq request) {
+            return new MarkdownParseRsp();
+        }
+
+        @Override
+        public void onRegisterCountInstruments(ArrayList<String> names, int type, int source) {
+        }
+
+        @Override
+        public void onRegisterValueInstruments(ArrayList<String> names, ArrayList<Double> values, int type, int source) {
+        }
+
+        @Override
+        public void onReportCountIndicators(HashMap<String, String> data, String name, long value) {
+        }
+
+        @Override
+        public void onReportValueIndicators(HashMap<String, String> data, String name, double value) {
+        }
 
         /**
          * Network transport is owned by the project MSF bridge.  Until that
          * bridge is explicitly wired, fail closed rather than handing native
          * startup a fabricated response or silently changing account state.
          */
-        @Override public void onSendSSORequest(long seq, String command, byte[] body,
-                                               SendRequestParam param, String service,
-                                               HashMap<String, byte[]> ext, int commandType) {
+        @Override
+        public void onSendSSORequest(long seq, String command, byte[] body,
+                                     SendRequestParam param, String service,
+                                     HashMap<String, byte[]> ext, int commandType) {
             ProjectKernelTransport.sendEngineSso(
                     runtime,
                     engine,
@@ -171,7 +247,13 @@ final class ProjectKernelBootstrap {
             );
         }
 
-        @Override public void onShowErrUITips(String message) { Log.w(TAG, "KernelNative UI tip: " + message); }
-        @Override public void onUpdateGeneralFlag(int flag) { }
+        @Override
+        public void onShowErrUITips(String message) {
+            Log.w(TAG, "KernelNative UI tip: " + message);
+        }
+
+        @Override
+        public void onUpdateGeneralFlag(int flag) {
+        }
     }
 }

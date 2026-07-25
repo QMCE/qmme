@@ -5,7 +5,8 @@ import android.util.Log
 import com.tencent.mobileqq.app.guard.GuardManager
 import mqq.app.MobileQQ
 
-class ForegroundGuardManager(application: Application, mode: Int) : GuardManager(application, mode) {
+class ForegroundGuardManager(application: Application, mode: Int) :
+    GuardManager(application, mode) {
     override fun f(): Boolean = true
 }
 
@@ -41,8 +42,12 @@ object ForegroundGuardInstaller {
         Log.i(
             TAG,
             "guard: $stage ${if (current == null) "created" else "replaced"} " +
-                "${current?.let(System::identityHashCode)} -> ${System.identityHashCode(replacement)}, " +
-                "foreground=${replacement.f()}"
+                    "${current?.let(System::identityHashCode)} -> ${
+                        System.identityHashCode(
+                            replacement
+                        )
+                    }, " +
+                    "foreground=${replacement.f()}"
         )
         return true
     }

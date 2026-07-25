@@ -59,7 +59,8 @@ final class ProjectKernelTransport {
             }
     );
 
-    private ProjectKernelTransport() {}
+    private ProjectKernelTransport() {
+    }
 
     /**
      * Bridge the wrapper-engine ECDH/SSO callback to the existing MSF servlet.

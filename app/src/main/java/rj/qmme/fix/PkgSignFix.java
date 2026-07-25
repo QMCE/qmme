@@ -8,7 +8,7 @@ import java.security.MessageDigest;
 
 /**
  * Explicit package identity values used by QQ's WtLogin/MSF code.
- *
+ * <p>
  * The app is installed as rj.qmme, but the embedded QQ Watch runtime was
  * built for com.tencent.qqlite.  Keeping these values in one small Java class
  * lets the bytecode patchers avoid depending on a context/package-manager

@@ -239,14 +239,16 @@ class QmmeApp : WatchApplicationDelegate() {
                     loginRestartScheduled.set(false)
                     return false
                 }
+
             @Suppress("DEPRECATION")
             val pendingOptions = if (AndroidVersion.isAtLeast(AndroidVersion.U)) {
                 ActivityOptions.makeBasic().apply {
-                    pendingIntentCreatorBackgroundActivityStartMode = if (AndroidVersion.isAtLeast(AndroidVersion.BAKLAVA)) {
-                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
-                    } else {
-                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-                    }
+                    pendingIntentCreatorBackgroundActivityStartMode =
+                        if (AndroidVersion.isAtLeast(AndroidVersion.BAKLAVA)) {
+                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
+                        } else {
+                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                        }
                 }.toBundle()
             } else {
                 null

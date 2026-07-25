@@ -149,6 +149,7 @@ class ChatRepository {
 
                 "onMsgDelete" -> {
                     val contact = args?.getOrNull(0) as? Contact
+
                     @Suppress("UNCHECKED_CAST")
                     val ids = args?.getOrNull(1) as? ArrayList<Long>
                     if (contact != null && ids != null) listener.onMessageDeleted(contact, ids)
@@ -206,7 +207,7 @@ class ChatRepository {
         Log.i(
             TAG,
             "sendMessage: dispatching elements=${elements.size} " +
-                "peer=${contact.peerUid} type=${contact.chatType}",
+                    "peer=${contact.peerUid} type=${contact.chatType}",
         )
         return runCatching {
             service.sendMsg(

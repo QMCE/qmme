@@ -12,15 +12,17 @@ import android.os.Parcelable;
 import android.util.Base64;
 import android.util.Log;
 
-import rj.qmme.BuildConfig;
-
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.Map;
 
-/** Adapted from Lmoye\signature\KillerApplication. */
+import rj.qmme.BuildConfig;
+
+/**
+ * Adapted from Lmoye\signature\KillerApplication.
+ */
 @SuppressLint({"PrivateApi", "DiscouragedPrivateApi"})
 public final class LegacyKiller {
     private static final String TAG = "QMME-Killer";
@@ -32,16 +34,16 @@ public final class LegacyKiller {
 
     @SuppressWarnings("TextBlockMigration")
     private static final String ORIGIN_SIGNATURE_BASE64 = "MIICUzCCAbygAwIBAgIES7sDYTANBgkqhkiG9w0BAQUFADBtMQ4wDAYDVQQGEwVDaGluYTEPMA0G\n"
-                    + "A1UECAwG5YyX5LqsMQ8wDQYDVQQHDAbljJfkuqwxDzANBgNVBAoMBuiFvuiurzEbMBkGA1UECwwS\n"
-                    + "5peg57q/5Lia5Yqh57O757ufMQswCQYDVQQDEwJRUTAgFw0xMDA0MDYwOTQ4MTdaGA8yMjg0MDEy\n"
-                    + "MDA5NDgxN1owbTEOMAwGA1UEBhMFQ2hpbmExDzANBgNVBAgMBuWMl+S6rDEPMA0GA1UEBwwG5YyX\n"
-                    + "5LqsMQ8wDQYDVQQKDAbohb7orq8xGzAZBgNVBAsMEuaXoOe6v+S4muWKoeezu+e7nzELMAkGA1UE\n"
-                    + "AxMCUVEwgZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJAoGBAKFel1Yhb2lMWRXgtSkJUlQ2fE5k+u/w\n"
-                    + "euE0iNlGYVpY3cMaQV9xfQGe3G0wuWA9Pip7PeCrfgz1Lf7jk3O8Ry+plwJ9eY1Z+B1SWmns8Vbo\n"
-                    + "hf0eJ5CSQ4ayIwzJDjt63JVgPdz0xAvccvItsPIWqZw3HTv4nLpleMYGmeig1TaVAgMBAAEwDQYJ\n"
-                    + "KoZIhvcNAQEFBQADgYEAlKm4DoBpFkXdQtZhF3WoVfcbzU13y2Co4pQEA1peALIbzF1KViSCEmvZ\n"
-                    + "G2sOUHCTd86574wu/RLMixav2aFZ81C7JwsUIE/wZdhDgycgcC4otBSR+8OiBfXy9CUm1n8XYU2K\n"
-                    + "l03mSHsshm7+3jtOSaD5FrqjwTNv0u4bFillIEk=\n";
+            + "A1UECAwG5YyX5LqsMQ8wDQYDVQQHDAbljJfkuqwxDzANBgNVBAoMBuiFvuiurzEbMBkGA1UECwwS\n"
+            + "5peg57q/5Lia5Yqh57O757ufMQswCQYDVQQDEwJRUTAgFw0xMDA0MDYwOTQ4MTdaGA8yMjg0MDEy\n"
+            + "MDA5NDgxN1owbTEOMAwGA1UEBhMFQ2hpbmExDzANBgNVBAgMBuWMl+S6rDEPMA0GA1UEBwwG5YyX\n"
+            + "5LqsMQ8wDQYDVQQKDAbohb7orq8xGzAZBgNVBAsMEuaXoOe6v+S4muWKoeezu+e7nzELMAkGA1UE\n"
+            + "AxMCUVEwgZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJAoGBAKFel1Yhb2lMWRXgtSkJUlQ2fE5k+u/w\n"
+            + "euE0iNlGYVpY3cMaQV9xfQGe3G0wuWA9Pip7PeCrfgz1Lf7jk3O8Ry+plwJ9eY1Z+B1SWmns8Vbo\n"
+            + "hf0eJ5CSQ4ayIwzJDjt63JVgPdz0xAvccvItsPIWqZw3HTv4nLpleMYGmeig1TaVAgMBAAEwDQYJ\n"
+            + "KoZIhvcNAQEFBQADgYEAlKm4DoBpFkXdQtZhF3WoVfcbzU13y2Co4pQEA1peALIbzF1KViSCEmvZ\n"
+            + "G2sOUHCTd86574wu/RLMixav2aFZ81C7JwsUIE/wZdhDgycgcC4otBSR+8OiBfXy9CUm1n8XYU2K\n"
+            + "l03mSHsshm7+3jtOSaD5FrqjwTNv0u4bFillIEk=\n";
 
     private static volatile boolean creatorInstalled;
     private static volatile boolean pmProxyInstalled;
@@ -284,7 +286,9 @@ public final class LegacyKiller {
     }
 
 
-    /** Spoof version fields only (always safe, needed for wlogin). */
+    /**
+     * Spoof version fields only (always safe, needed for wlogin).
+     */
     public static void fixPackageInfoVersion(PackageInfo info) {
         if (info == null) return;
         info.versionName = ORIGIN_VERSION_NAME;

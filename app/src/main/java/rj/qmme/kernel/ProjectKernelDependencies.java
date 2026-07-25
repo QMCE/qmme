@@ -36,7 +36,9 @@ import mqq.manager.TicketManager;
 import oicq.wlogin_sdk.request.Ticket;
 import rj.qmme.diagnostics.OfflineDiagnostics;
 
-/** Project-owned dependency slots for the Watch KernelServiceImpl. */
+/**
+ * Project-owned dependency slots for the Watch KernelServiceImpl.
+ */
 final class ProjectKernelDependencies {
     private static final String TAG = "QMME";
     private static final int APP_ID = 537282233;
@@ -44,7 +46,8 @@ final class ProjectKernelDependencies {
     private static final String CLIENT_BUILD = "9.0.7.2563";
     private static final String QUA = "V1_WAT_SQ_9.0.7_0_IDC_B";
 
-    private ProjectKernelDependencies() {}
+    private ProjectKernelDependencies() {
+    }
 
     static void install(KernelServiceImpl kernel, AppRuntime runtime) throws ReflectiveOperationException {
         set(kernel, "sAppSetting", new ProjectAppSetting(runtime.getApplicationContext()));
@@ -71,16 +74,27 @@ final class ProjectKernelDependencies {
 
     private static final class ProjectAppSetting implements IAppSettingInject {
         private final Context context;
-        ProjectAppSetting(Context context) { this.context = context; }
-        @Override public int a() {
+
+        ProjectAppSetting(Context context) {
+            this.context = context;
+        }
+
+        @Override
+        public int a() {
             try {
                 return context.getApplicationInfo().targetSdkVersion;
             } catch (Throwable ignored) {
                 return Build.VERSION.SDK_INT;
             }
         }
-        @Override public String c() { return CLIENT_VERSION; }
-        @Override public String d(Context ignored) {
+
+        @Override
+        public String c() {
+            return CLIENT_VERSION;
+        }
+
+        @Override
+        public String d(Context ignored) {
             /*
             int code = 1;
             try { code = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionCode; }
@@ -89,26 +103,89 @@ final class ProjectKernelDependencies {
             */
             return CLIENT_BUILD;
         }
-        @Override public String e() { return CLIENT_BUILD; }
-        @Override public boolean f(Context ignored) { return false; }
-        @Override public boolean g(Context ignored) { return false; }
-        @Override public int getAppId() { return APP_ID; }
-        @Override public String getQUA() { return QUA; }
-        @Override public String getQimei36() { return "needInjecQimei36"; }
-        @Override public String getVersion() { return "android " + CLIENT_VERSION; }
-        @Override public String h() { return "2563"; }
-        @Override public void i(boolean ignored) { }
-        @Override public boolean isDebugVersion() { return false; }
-        @Override public boolean isGrayVersion() { return true; }
-        @Override public boolean isPublicVersion() { return true; }
-        @Override public boolean isUiTest() { return false; }
-        @Override public String j() { return "V 9.0.7.2563"; }
-        @Override public boolean k() { return false; }
+
+        @Override
+        public String e() {
+            return CLIENT_BUILD;
+        }
+
+        @Override
+        public boolean f(Context ignored) {
+            return false;
+        }
+
+        @Override
+        public boolean g(Context ignored) {
+            return false;
+        }
+
+        @Override
+        public int getAppId() {
+            return APP_ID;
+        }
+
+        @Override
+        public String getQUA() {
+            return QUA;
+        }
+
+        @Override
+        public String getQimei36() {
+            return "needInjecQimei36";
+        }
+
+        @Override
+        public String getVersion() {
+            return "android " + CLIENT_VERSION;
+        }
+
+        @Override
+        public String h() {
+            return "2563";
+        }
+
+        @Override
+        public void i(boolean ignored) {
+        }
+
+        @Override
+        public boolean isDebugVersion() {
+            return false;
+        }
+
+        @Override
+        public boolean isGrayVersion() {
+            return true;
+        }
+
+        @Override
+        public boolean isPublicVersion() {
+            return true;
+        }
+
+        @Override
+        public boolean isUiTest() {
+            return false;
+        }
+
+        @Override
+        public String j() {
+            return "V 9.0.7.2563";
+        }
+
+        @Override
+        public boolean k() {
+            return false;
+        }
     }
 
     private static final class ProjectRelationModule implements IRelationModule {
         static final ProjectRelationModule INSTANCE = new ProjectRelationModule();
-        @Override public boolean a() { return true; }
+
+        @Override
+        public boolean a() {
+            return true;
+        }
     }
 
     /**
@@ -126,7 +203,8 @@ final class ProjectKernelDependencies {
             this.runtime = runtime;
         }
 
-        @Override public void a(@NonNull HashMap<String, String> sessionMap) {
+        @Override
+        public void a(@NonNull HashMap<String, String> sessionMap) {
             Context context = runtime == null ? null : runtime.getApplicationContext();
             if (sessionMap == null || !sessionMap.containsKey("gpro")) {
                 Log.d(TAG, "ProjectBusinessModule: no gpro session advertised");
@@ -157,8 +235,10 @@ final class ProjectKernelDependencies {
                         "",
                         ""
                 );
-                session.init(config, new IGProDependsAdapter() {}, new IKernelGProSessionListener() {
-                    @Override public void onGProSessionCreate(int result, String createdSessionId) {
+                session.init(config, new IGProDependsAdapter() {
+                }, new IKernelGProSessionListener() {
+                    @Override
+                    public void onGProSessionCreate(int result, String createdSessionId) {
                         Log.d(TAG, "ProjectBusinessModule: gpro session result=" + result
                                 + " hasSessionId=" + (createdSessionId != null && !createdSessionId.isEmpty()));
                         OfflineDiagnostics.INSTANCE.record(
@@ -168,7 +248,9 @@ final class ProjectKernelDependencies {
                                         + (createdSessionId != null && !createdSessionId.isEmpty())
                         );
                     }
-                    @Override public void onGetSelfTinyId(long tinyId) {
+
+                    @Override
+                    public void onGetSelfTinyId(long tinyId) {
                         Log.d(TAG, "ProjectBusinessModule: gpro self tiny id received");
                     }
                 });
@@ -188,30 +270,44 @@ final class ProjectKernelDependencies {
             }
         }
 
-        @Override public void start() {
+        @Override
+        public void start() {
             Log.d(TAG, "ProjectBusinessModule: start");
         }
 
-        @Override public void stop() {
+        @Override
+        public void stop() {
             gproSession = null;
             Log.d(TAG, "ProjectBusinessModule: stop");
         }
     }
 
     private static final class ProjectAccountModule implements IAccountModule {
-        @Override public void a(@NonNull AppRuntime app, @NonNull IQQNTWrapperSession session) { }
+        @Override
+        public void a(@NonNull AppRuntime app, @NonNull IQQNTWrapperSession session) {
+        }
+
         @NonNull
-        @Override public OnLineBusinessInfo b(@NonNull AppRuntime app) { return new OnLineBusinessInfo(0, 0, 0); }
+        @Override
+        public OnLineBusinessInfo b(@NonNull AppRuntime app) {
+            return new OnLineBusinessInfo(0, 0, 0);
+        }
+
         @NonNull
-        @Override public List<String> c(@NonNull String uin, @NonNull AppRuntime app) {
+        @Override
+        public List<String> c(@NonNull String uin, @NonNull AppRuntime app) {
             TicketSnapshot t = TicketSnapshot.read(app, uin);
             return List.of(t.a2, t.d2, t.d2Key);
         }
+
         @NonNull
-        @Override public DeviceInfo d(@NonNull AppRuntime app) {
+        @Override
+        public DeviceInfo d(@NonNull AppRuntime app) {
             return ProjectKernelDeviceInfo.safeCreate(app.getApplicationContext(), app);
         }
-        @Override public boolean e(@NonNull AppRuntime app) {
+
+        @Override
+        public boolean e(@NonNull AppRuntime app) {
             try {
                 return app.getCurAccLoginType() != 5;
             } catch (Throwable error) {
@@ -223,7 +319,10 @@ final class ProjectKernelDependencies {
 
     private static final class ProjectSenderModule implements ISenderModule {
         private final AppRuntime runtime;
-        ProjectSenderModule(AppRuntime runtime) { this.runtime = runtime; }
+
+        ProjectSenderModule(AppRuntime runtime) {
+            this.runtime = runtime;
+        }
 
         private TicketManager ticketManager(AppRuntime owner) {
             try {
@@ -247,7 +346,9 @@ final class ProjectKernelDependencies {
             }
             return out.toString();
         }
-        @Override public String a(@NonNull String uin) {
+
+        @Override
+        public String a(@NonNull String uin) {
             TicketManager ticketManager = ticketManager(runtime);
             if (ticketManager == null) {
                 Log.w(TAG, "ProjectSenderModule: TicketManager unavailable for getA2");
@@ -261,7 +362,9 @@ final class ProjectKernelDependencies {
                 return "";
             }
         }
-        @Override public String[] b() {
+
+        @Override
+        public String[] b() {
             try {
                 String[] commands = runtime.getMessagePushSSOCommands();
                 return commands == null ? new String[0] : commands;
@@ -270,11 +373,24 @@ final class ProjectKernelDependencies {
                 return new String[0];
             }
         }
-        @Override public void c(long seq, String service, byte[] body, SendRequestParam param, String cmd, HashMap<String, byte[]> ext) { }
+
+        @Override
+        public void c(long seq, String service, byte[] body, SendRequestParam param, String cmd, HashMap<String, byte[]> ext) {
+        }
+
         @NonNull
-        @Override public BatteryStatus getBatteryStatus() { return new BatteryStatus(100, false); }
-        @Override public ArrayList<ServerAddress> getIpDirectList(String host, IpType type) { return new ArrayList<>(); }
-        @Override public SessionTicket getLoginTicket() {
+        @Override
+        public BatteryStatus getBatteryStatus() {
+            return new BatteryStatus(100, false);
+        }
+
+        @Override
+        public ArrayList<ServerAddress> getIpDirectList(String host, IpType type) {
+            return new ArrayList<>();
+        }
+
+        @Override
+        public SessionTicket getLoginTicket() {
             String uin = runtime.getAccount();
             TicketManager ticketManager = ticketManager(runtime);
             if (ticketManager == null || uin == null || uin.isEmpty()) {
@@ -313,10 +429,12 @@ final class ProjectKernelDependencies {
             );
             return new SessionTicket(a2, d2, d2Key);
         }
-        @Override public void onSendNetRequest(long seq, String httpMethod, String url,
-                                                HashMap<String, String> headers,
-                                                HashMap<String, String> params,
-                                                int retry, int timeout) {
+
+        @Override
+        public void onSendNetRequest(long seq, String httpMethod, String url,
+                                     HashMap<String, String> headers,
+                                     HashMap<String, String> params,
+                                     int retry, int timeout) {
             ProjectKernelTransport.sendNetRequest(
                     runtime,
                     seq,
@@ -328,9 +446,11 @@ final class ProjectKernelDependencies {
                     timeout
             );
         }
-        @Override public void onSendOidbRequest(long seq, int service, int command, byte[] body,
-                                                SendRequestParam param, String cmd,
-                                                HashMap<String, byte[]> ext) {
+
+        @Override
+        public void onSendOidbRequest(long seq, int service, int command, byte[] body,
+                                      SendRequestParam param, String cmd,
+                                      HashMap<String, byte[]> ext) {
             // Normal OIDB requests are already serialized by KernelServiceImpl's
             // own IDependsAdapter and dispatched through KernelServlet.  The
             // official Watch SenderModule leaves this callback empty as well;
@@ -345,8 +465,17 @@ final class ProjectKernelDependencies {
 
     private static final class TicketSnapshot {
         final String a2, d2, d2Key;
-        TicketSnapshot(String a2, String d2, String d2Key) { this.a2 = a2; this.d2 = d2; this.d2Key = d2Key; }
-        boolean ready() { return !a2.isEmpty() && !d2.isEmpty() && !d2Key.isEmpty(); }
+
+        TicketSnapshot(String a2, String d2, String d2Key) {
+            this.a2 = a2;
+            this.d2 = d2;
+            this.d2Key = d2Key;
+        }
+
+        boolean ready() {
+            return !a2.isEmpty() && !d2.isEmpty() && !d2Key.isEmpty();
+        }
+
         static TicketSnapshot read(AppRuntime runtime, String uin) {
             try {
                 Class<?> type = Class.forName("com.tencent.qqnt.account.login.api.ITicketRuntimeService");
@@ -361,6 +490,7 @@ final class ProjectKernelDependencies {
                 return new TicketSnapshot("", "", "");
             }
         }
+
         private static String hex(byte[] bytes) {
             if (bytes == null) return "";
             StringBuilder out = new StringBuilder(bytes.length * 2);

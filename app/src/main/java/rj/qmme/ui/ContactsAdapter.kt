@@ -194,11 +194,19 @@ class ContactsAdapter(
                             init = {
                                 orientation = LinearLayout.HORIZONTAL
                                 gravity = Gravity.CENTER_VERTICAL
-                                setPadding(dp(parent, 12), dp(parent, 10), dp(parent, 12), dp(parent, 10))
+                                setPadding(
+                                    dp(parent, 12),
+                                    dp(parent, 10),
+                                    dp(parent, 12),
+                                    dp(parent, 10)
+                                )
                             },
                         ) {
                             avatar = ShapeableImageView(
-                                lparams = LayoutParams(width = dp(parent, 44), height = dp(parent, 44)),
+                                lparams = LayoutParams(
+                                    width = dp(parent, 44),
+                                    height = dp(parent, 44)
+                                ),
                                 init = {
                                     setImageResource(R.drawable.ic_launcher_foreground)
                                     AvatarLoader.makeCircular(this)
@@ -279,7 +287,8 @@ class ContactsAdapter(
         return BuddyHolder(root, itemCard, avatar, title, subtitle, divider, officialAvatar)
     }
 
-    class HeaderHolder(itemView: View, val title: MaterialTextView) : RecyclerView.ViewHolder(itemView)
+    class HeaderHolder(itemView: View, val title: MaterialTextView) :
+        RecyclerView.ViewHolder(itemView)
 
     class BuddyHolder(
         itemView: View,

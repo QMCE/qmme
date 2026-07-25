@@ -292,14 +292,20 @@ class MainHikagable(
                             lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
                             init = {
                                 text = "消息"
-                                TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_TitleLarge)
+                                TextViewCompat.setTextAppearance(
+                                    this,
+                                    com.google.android.material.R.style.TextAppearance_Material3_TitleLarge
+                                )
                             },
                         )
                         toolbarSubtitle = MaterialTextView(
                             lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
                             init = {
                                 text = onlineSubtitle()
-                                TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
+                                TextViewCompat.setTextAppearance(
+                                    this,
+                                    com.google.android.material.R.style.TextAppearance_Material3_BodySmall
+                                )
                             },
                         )
                     }
@@ -369,146 +375,160 @@ class MainHikagable(
         }.also { cachedHikage = it }
 
     @HikagableAnnotation
-    private fun Hikage.Performer<FrameLayout.LayoutParams>.buildChatPage(): LinearLayout = LinearLayout(
-        lparams = LayoutParams(matchParent = true),
-        init = {
-            orientation = LinearLayout.VERTICAL
-            clipToPadding = false
-            setBackgroundColor(
-                MaterialColors.getColor(
-                    this,
-                    com.google.android.material.R.attr.colorSurfaceContainer,
-                ),
-            )
-        },
-    ) {
-        chatStatusCard = MaterialCardView(
-            lparams = LayoutParams(widthMatchParent = true) {
-                topMargin = dp(12)
-                leftMargin = dp(12)
-                rightMargin = dp(12)
-                bottomMargin = dp(4)
+    private fun Hikage.Performer<FrameLayout.LayoutParams>.buildChatPage(): LinearLayout =
+        LinearLayout(
+            lparams = LayoutParams(matchParent = true),
+            init = {
+                orientation = LinearLayout.VERTICAL
+                clipToPadding = false
+                setBackgroundColor(
+                    MaterialColors.getColor(
+                        this,
+                        com.google.android.material.R.attr.colorSurfaceContainer,
+                    ),
+                )
             },
-            init = { isClickable = false },
         ) {
-            LinearLayout(
-                lparams = LayoutParams(matchParent = true),
+            chatStatusCard = MaterialCardView(
+                lparams = LayoutParams(widthMatchParent = true) {
+                    topMargin = dp(12)
+                    leftMargin = dp(12)
+                    rightMargin = dp(12)
+                    bottomMargin = dp(4)
+                },
+                init = { isClickable = false },
+            ) {
+                LinearLayout(
+                    lparams = LayoutParams(matchParent = true),
+                    init = {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(dp(16), dp(12), dp(16), dp(12))
+                    },
+                ) {
+                    chatStatus = MaterialTextView(
+                        lparams = LayoutParams(widthMatchParent = true),
+                        init = {
+                            text = "正在连接 QQ 服务…"
+                            TextViewCompat.setTextAppearance(
+                                this,
+                                com.google.android.material.R.style.TextAppearance_Material3_BodyMedium
+                            )
+                        },
+                    )
+                }
+            }
+            chatSwipeRefresh = SwipeRefreshLayout(
+                lparams = LayoutParams(widthMatchParent = true, height = 0) { weight = 1f },
                 init = {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(16), dp(12), dp(16), dp(12))
+                    setOnRefreshListener { boundChatViewModel?.refreshContacts() }
                 },
             ) {
-                chatStatus = MaterialTextView(
-                    lparams = LayoutParams(widthMatchParent = true),
+                chatRecyclerView = RecyclerView(
+                    lparams = LayoutParams(matchParent = true),
                     init = {
-                        text = "正在连接 QQ 服务…"
-                        TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+                        layoutManager = LinearLayoutManager(context)
+                        overScrollMode = View.OVER_SCROLL_NEVER
+                        clipToPadding = false
+                        setPadding(dp(4), dp(4), dp(4), dp(10))
                     },
                 )
             }
         }
-        chatSwipeRefresh = SwipeRefreshLayout(
-            lparams = LayoutParams(widthMatchParent = true, height = 0) { weight = 1f },
-            init = {
-                setOnRefreshListener { boundChatViewModel?.refreshContacts() }
-            },
-        ) {
-            chatRecyclerView = RecyclerView(
-                lparams = LayoutParams(matchParent = true),
-                init = {
-                    layoutManager = LinearLayoutManager(context)
-                    overScrollMode = View.OVER_SCROLL_NEVER
-                    clipToPadding = false
-                    setPadding(dp(4), dp(4), dp(4), dp(10))
-                },
-            )
-        }
-    }
 
     @HikagableAnnotation
-    private fun Hikage.Performer<FrameLayout.LayoutParams>.buildContactsPage(): LinearLayout = LinearLayout(
-        lparams = LayoutParams(matchParent = true),
-        init = {
-            orientation = LinearLayout.VERTICAL
-            clipToPadding = false
-            setBackgroundColor(
-                MaterialColors.getColor(
-                    this,
-                    com.google.android.material.R.attr.colorSurfaceContainer,
-                ),
-            )
-        },
-    ) {
-        contactsStatusCard = MaterialCardView(
-            lparams = LayoutParams(widthMatchParent = true) {
-                topMargin = dp(12)
-                leftMargin = dp(12)
-                rightMargin = dp(12)
-                bottomMargin = dp(4)
+    private fun Hikage.Performer<FrameLayout.LayoutParams>.buildContactsPage(): LinearLayout =
+        LinearLayout(
+            lparams = LayoutParams(matchParent = true),
+            init = {
+                orientation = LinearLayout.VERTICAL
+                clipToPadding = false
+                setBackgroundColor(
+                    MaterialColors.getColor(
+                        this,
+                        com.google.android.material.R.attr.colorSurfaceContainer,
+                    ),
+                )
             },
-            init = { isClickable = false },
         ) {
-            LinearLayout(
-                lparams = LayoutParams(matchParent = true),
+            contactsStatusCard = MaterialCardView(
+                lparams = LayoutParams(widthMatchParent = true) {
+                    topMargin = dp(12)
+                    leftMargin = dp(12)
+                    rightMargin = dp(12)
+                    bottomMargin = dp(4)
+                },
+                init = { isClickable = false },
+            ) {
+                LinearLayout(
+                    lparams = LayoutParams(matchParent = true),
+                    init = {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(dp(16), dp(8), dp(8), dp(8))
+                    },
+                ) {
+                    contactsProgress = CircularProgressIndicator(
+                        lparams = LayoutParams(width = dp(22), height = dp(22)) {
+                            rightMargin = dp(12)
+                        },
+                        init = {
+                            isIndeterminate = true
+                            visibility = View.GONE
+                        },
+                    )
+                    contactsStatus = MaterialTextView(
+                        lparams = LayoutParams(
+                            width = 0,
+                            height = ViewGroup.LayoutParams.WRAP_CONTENT
+                        ) {
+                            weight = 1f
+                        },
+                        init = {
+                            text = "等待联系人服务…"
+                            TextViewCompat.setTextAppearance(
+                                this,
+                                com.google.android.material.R.style.TextAppearance_Material3_BodyMedium
+                            )
+                        },
+                    )
+                    contactsRefresh = Chip(
+                        lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
+                        init = {
+                            text = "刷新"
+                            isCheckable = false
+                            setChipIconResource(R.drawable.ic_refresh)
+                            isChipIconVisible = true
+                            TextViewCompat.setTextAppearance(
+                                this,
+                                com.google.android.material.R.style.TextAppearance_Material3_LabelLarge
+                            )
+                            setOnClickListener {
+                                boundContactsViewModel?.refresh(RuntimeCoordinator.currentRuntime())
+                            }
+                        },
+                    )
+                }
+            }
+            contactsSwipeRefresh = SwipeRefreshLayout(
+                lparams = LayoutParams(widthMatchParent = true, height = 0) { weight = 1f },
                 init = {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(16), dp(8), dp(8), dp(8))
+                    setOnRefreshListener {
+                        boundContactsViewModel?.refresh(RuntimeCoordinator.currentRuntime())
+                    }
                 },
             ) {
-                contactsProgress = CircularProgressIndicator(
-                    lparams = LayoutParams(width = dp(22), height = dp(22)) {
-                        rightMargin = dp(12)
-                    },
+                contactsRecyclerView = RecyclerView(
+                    lparams = LayoutParams(matchParent = true),
                     init = {
-                        isIndeterminate = true
-                        visibility = View.GONE
-                    },
-                )
-                contactsStatus = MaterialTextView(
-                    lparams = LayoutParams(width = 0, height = ViewGroup.LayoutParams.WRAP_CONTENT) {
-                        weight = 1f
-                    },
-                    init = {
-                        text = "等待联系人服务…"
-                        TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
-                    },
-                )
-                contactsRefresh = Chip(
-                    lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
-                    init = {
-                        text = "刷新"
-                        isCheckable = false
-                        setChipIconResource(R.drawable.ic_refresh)
-                        isChipIconVisible = true
-                        TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_LabelLarge)
-                        setOnClickListener {
-                            boundContactsViewModel?.refresh(RuntimeCoordinator.currentRuntime())
-                        }
+                        layoutManager = LinearLayoutManager(context)
+                        overScrollMode = View.OVER_SCROLL_NEVER
+                        clipToPadding = false
+                        setPadding(dp(4), dp(4), dp(4), dp(10))
                     },
                 )
             }
         }
-        contactsSwipeRefresh = SwipeRefreshLayout(
-            lparams = LayoutParams(widthMatchParent = true, height = 0) { weight = 1f },
-            init = {
-                setOnRefreshListener {
-                    boundContactsViewModel?.refresh(RuntimeCoordinator.currentRuntime())
-                }
-            },
-        ) {
-            contactsRecyclerView = RecyclerView(
-                lparams = LayoutParams(matchParent = true),
-                init = {
-                    layoutManager = LinearLayoutManager(context)
-                    overScrollMode = View.OVER_SCROLL_NEVER
-                    clipToPadding = false
-                    setPadding(dp(4), dp(4), dp(4), dp(10))
-                },
-            )
-        }
-    }
 
     @HikagableAnnotation
     private fun Hikage.Performer<FrameLayout.LayoutParams>.buildMyPage(): ScrollView = ScrollView(
@@ -540,14 +560,20 @@ class MainHikagable(
                         lparams = LayoutParams(widthMatchParent = true),
                         init = {
                             text = "QQ 账号"
-                            TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_LabelMedium)
+                            TextViewCompat.setTextAppearance(
+                                this,
+                                com.google.android.material.R.style.TextAppearance_Material3_LabelMedium
+                            )
                         },
                     )
                     MaterialTextView(
                         lparams = LayoutParams(widthMatchParent = true) { topMargin = dp(4) },
                         init = {
                             text = account.uin.toString()
-                            TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_TitleLarge)
+                            TextViewCompat.setTextAppearance(
+                                this,
+                                com.google.android.material.R.style.TextAppearance_Material3_TitleLarge
+                            )
                         },
                     )
                     Chip(
@@ -558,7 +584,10 @@ class MainHikagable(
                             text = "登录存储已启用"
                             isCheckable = false
                             isClickable = false
-                            TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_LabelMedium)
+                            TextViewCompat.setTextAppearance(
+                                this,
+                                com.google.android.material.R.style.TextAppearance_Material3_LabelMedium
+                            )
                         },
                     )
                     MaterialDivider(
@@ -568,7 +597,10 @@ class MainHikagable(
                         lparams = LayoutParams(widthMatchParent = true) { topMargin = dp(12) },
                         init = {
                             text = "登录状态会保存在本机，QQ 服务将在后台继续工作。"
-                            TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+                            TextViewCompat.setTextAppearance(
+                                this,
+                                com.google.android.material.R.style.TextAppearance_Material3_BodyMedium
+                            )
                         },
                     )
                     MaterialButton(

@@ -8,10 +8,10 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
-import com.tencent.qqnt.kernel.nativeinterface.PicElement
-import com.tencent.qqnt.kernel.nativeinterface.RichMediaFilePathInfo
 import com.tencent.qqnt.kernel.nativeinterface.MsgRecord
+import com.tencent.qqnt.kernel.nativeinterface.PicElement
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
+import com.tencent.qqnt.kernel.nativeinterface.RichMediaFilePathInfo
 import com.tencent.qqnt.kernelpublic.nativeinterface.Contact
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -104,10 +104,13 @@ class ChatDetailViewModel : ViewModel() {
 
     private var openJob: Job? = null
     private var stateJob: Job? = null
+
     @Volatile
     private var opening = false
+
     @Volatile
     private var resyncing = false
+
     @Volatile
     private var sessionGeneration = 0L
     private var selfUin = 0L
@@ -133,7 +136,8 @@ class ChatDetailViewModel : ViewModel() {
                 val runtime = RuntimeCoordinator.currentRuntime()
                 when (val connection = repository.connect(runtime)) {
                     ChatRepository.Connection.Ready -> {
-                        RuntimeCoordinator.currentSession()?.let { sessionGeneration = it.generation }
+                        RuntimeCoordinator.currentSession()
+                            ?.let { sessionGeneration = it.generation }
                         if (!isCurrentSession()) {
                             failOpen("登录会话已变化，请重新打开聊天")
                             return@launch
@@ -239,25 +243,26 @@ class ChatDetailViewModel : ViewModel() {
         if (normalized.isBlank() || _sending.value) return false
         _sending.value = true
         _statusText.value = "正在发送…"
-        val started = repository.sendText(target.toKernelContact(), normalized) { code, errorMessage ->
-            Log.i(
-                TAG,
-                "sendText result code=$code msg=$errorMessage " +
-                    "sameTarget=${isCurrentTarget(target)} connected=${repository.isConnected()}",
-            )
-            if (!isCurrentTarget(target)) return@sendText
-            _sending.value = false
-            _statusText.value = if (code == 0) {
-                ""
-            } else {
-                errorMessage?.takeIf(String::isNotBlank)?.let { "发送失败：$it" } ?: "发送失败"
+        val started =
+            repository.sendText(target.toKernelContact(), normalized) { code, errorMessage ->
+                Log.i(
+                    TAG,
+                    "sendText result code=$code msg=$errorMessage " +
+                            "sameTarget=${isCurrentTarget(target)} connected=${repository.isConnected()}",
+                )
+                if (!isCurrentTarget(target)) return@sendText
+                _sending.value = false
+                _statusText.value = if (code == 0) {
+                    ""
+                } else {
+                    errorMessage?.takeIf(String::isNotBlank)?.let { "发送失败：$it" } ?: "发送失败"
+                }
             }
-        }
         Log.i(
             TAG,
             "sendText started=$started connected=${repository.isConnected()} " +
-                "gen=$sessionGeneration curGen=${RuntimeCoordinator.currentSession()?.generation} " +
-                "peer=${target.peerUid} type=${target.chatType}",
+                    "gen=$sessionGeneration curGen=${RuntimeCoordinator.currentSession()?.generation} " +
+                    "peer=${target.peerUid} type=${target.chatType}",
         )
         if (!started) {
             _sending.value = false
@@ -288,8 +293,10 @@ class ChatDetailViewModel : ViewModel() {
             }
             if (!isCurrentTarget(target)) return@launch
             _statusText.value = "正在发送图片…"
-            val started = repository.sendMessage(target.toKernelContact(), arrayListOf(element)) {
-                    code, errorMessage ->
+            val started = repository.sendMessage(
+                target.toKernelContact(),
+                arrayListOf(element)
+            ) { code, errorMessage ->
                 if (!isCurrentTarget(target)) return@sendMessage
                 _sending.value = false
                 _statusText.value = if (code == 0) {
@@ -314,8 +321,10 @@ class ChatDetailViewModel : ViewModel() {
         }
         _messageActionInProgress.value = true
         _statusText.value = "正在撤回消息…"
-        val started = repository.recallMessage(target.toKernelContact(), message.messageId) {
-                code, errorMessage ->
+        val started = repository.recallMessage(
+            target.toKernelContact(),
+            message.messageId
+        ) { code, errorMessage ->
             if (!isCurrentTarget(target)) return@recallMessage
             _messageActionInProgress.value = false
             if (code == 0) {
@@ -346,8 +355,10 @@ class ChatDetailViewModel : ViewModel() {
         if (message.messageId <= 0L || _messageActionInProgress.value) return false
         _messageActionInProgress.value = true
         _statusText.value = "正在删除消息…"
-        val started = repository.deleteMessages(target.toKernelContact(), listOf(message.messageId)) {
-                code, errorMessage ->
+        val started = repository.deleteMessages(
+            target.toKernelContact(),
+            listOf(message.messageId)
+        ) { code, errorMessage ->
             if (!isCurrentTarget(target)) return@deleteMessages
             _messageActionInProgress.value = false
             if (code == 0) {
@@ -374,8 +385,10 @@ class ChatDetailViewModel : ViewModel() {
         _statusText.value = "正在重发消息…"
         messageTable[message.stableId] = message.copy(sendStatus = 1)
         publishMessages()
-        val started = repository.resendMessage(target.toKernelContact(), message.messageId) {
-                code, errorMessage ->
+        val started = repository.resendMessage(
+            target.toKernelContact(),
+            message.messageId
+        ) { code, errorMessage ->
             if (!isCurrentTarget(target)) return@resendMessage
             _messageActionInProgress.value = false
             _statusText.value = if (code == 0) {
@@ -411,8 +424,10 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     private fun loadLatest(target: ChatTarget) {
-        val started = repository.loadLatest(target.toKernelContact(), LATEST_COUNT) {
-                code, errorMessage, records, needContinue ->
+        val started = repository.loadLatest(
+            target.toKernelContact(),
+            LATEST_COUNT
+        ) { code, errorMessage, records, needContinue ->
             if (!isCurrentTarget(target)) return@loadLatest
             _loading.value = false
             if (code != 0) {
@@ -618,7 +633,7 @@ class ChatDetailViewModel : ViewModel() {
     private fun matchesTarget(record: MsgRecord, target: ChatTarget): Boolean {
         if (record.chatType != target.chatType) return false
         return record.peerUid.orEmpty() == target.peerUid ||
-            (target.peerUin > 0L && record.peerUin == target.peerUin)
+                (target.peerUin > 0L && record.peerUin == target.peerUin)
     }
 
     private fun isCurrentSession(): Boolean =

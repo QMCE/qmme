@@ -145,7 +145,10 @@ class LoginHikagable(
                     },
                     init = {
                         text = "方形屏幕\n适用于手机"
-                        TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_BodyLarge)
+                        TextViewCompat.setTextAppearance(
+                            this,
+                            com.google.android.material.R.style.TextAppearance_Material3_BodyLarge
+                        )
                         setPadding(dp(12), dp(8), dp(12), dp(8))
                     }
                 )
@@ -166,7 +169,10 @@ class LoginHikagable(
                 lparams = LayoutParams(widthMatchParent = true),
                 init = {
                     text = "我已阅读并同意"
-                    TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_BodyLarge)
+                    TextViewCompat.setTextAppearance(
+                        this,
+                        com.google.android.material.R.style.TextAppearance_Material3_BodyLarge
+                    )
                     gravity = Gravity.CENTER_VERTICAL
                     setPadding(dp(8), dp(8), dp(8), dp(8))
                 }
@@ -299,7 +305,10 @@ class LoginHikagable(
             lparams = LayoutParams(widthMatchParent = true),
             init = {
                 this.text = text
-                TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_TitleLarge)
+                TextViewCompat.setTextAppearance(
+                    this,
+                    com.google.android.material.R.style.TextAppearance_Material3_TitleLarge
+                )
                 gravity = Gravity.CENTER
             }
         )
@@ -316,7 +325,10 @@ class LoginHikagable(
             lparams = LayoutParams(widthMatchParent = true),
             init = {
                 this.text = text
-                TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+                TextViewCompat.setTextAppearance(
+                    this,
+                    com.google.android.material.R.style.TextAppearance_Material3_BodyMedium
+                )
                 gravity = Gravity.CENTER
             }
         )

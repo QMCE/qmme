@@ -141,7 +141,12 @@ class MessageAdapter(
                                 ),
                                 init = {
                                     orientation = LinearLayout.VERTICAL
-                                    setPadding(dp(parent, 12), dp(parent, 8), dp(parent, 12), dp(parent, 8))
+                                    setPadding(
+                                        dp(parent, 12),
+                                        dp(parent, 8),
+                                        dp(parent, 12),
+                                        dp(parent, 8)
+                                    )
                                 },
                             ) {
                                 image = ShapeableImageView(
@@ -196,9 +201,9 @@ class MessageAdapter(
         val message = getItem(position)
         val previous = if (position > 0) getItem(position - 1) else null
         val firstOfGroup = previous == null ||
-            previous.outgoing != message.outgoing ||
-            previous.senderUin != message.senderUin ||
-            (message.timestampSeconds - previous.timestampSeconds) > GROUP_GAP_SECONDS
+                previous.outgoing != message.outgoing ||
+                previous.senderUin != message.senderUin ||
+                (message.timestampSeconds - previous.timestampSeconds) > GROUP_GAP_SECONDS
         holder.bind(message, firstOfGroup)
     }
 
@@ -277,7 +282,8 @@ class MessageAdapter(
                 alignChild(metaRow, edge)
                 alignChild(card, edge)
 
-                val showNickname = isGroup && !outgoing && firstOfGroup && message.senderName.isNotBlank()
+                val showNickname =
+                    isGroup && !outgoing && firstOfGroup && message.senderName.isNotBlank()
                 nickname.visibility = if (showNickname) View.VISIBLE else View.GONE
                 if (showNickname) nickname.text = message.senderName
                 nickname.textColor = MaterialColors.getColor(
