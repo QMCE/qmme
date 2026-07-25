@@ -12,6 +12,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
 
+@SuppressWarnings("deprecation")
 public final class PackageSignatureProvider {
     private static final String TAG = "PackageSignatureProvider";
     private static final int API_ANDROID_17 = 37;
@@ -30,8 +31,7 @@ public final class PackageSignatureProvider {
             installed = true;
             return;
         }
-        Signature signature = SPOOFED_SIGNATURE;
-        replacePackageInfoCreator(signature);
+        replacePackageInfoCreator(SPOOFED_SIGNATURE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             HiddenApiAccess.addHiddenApiExemptions(
                     "Landroid/os/Parcel;",
@@ -63,7 +63,6 @@ public final class PackageSignatureProvider {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private static void replacePackageInfoCreator(Signature signature) {
         try {
             Parcelable.Creator<PackageInfo> creator = PackageInfo.CREATOR;

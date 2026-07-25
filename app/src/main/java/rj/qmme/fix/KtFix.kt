@@ -1,8 +1,6 @@
 package rj.qmme.fix
 
-import kotlin.collections.CharIterator
-import kotlin.text.MatchResult
-import kotlin.text.Regex
+import kotlin.math.roundToInt
 
 /**
  * Kotlin stdlib compatibility bridge for patched QQWatch bytecode.
@@ -12,7 +10,7 @@ import kotlin.text.Regex
  * those calls can fail with IllegalAccessError, so patched call sites can route
  * through these public static bridge methods instead.
  */
-@Suppress("unused")
+@Suppress("unused", "PLATFORM_CLASS_MAPPED_TO_KOTLIN", "FunctionName")
 object KtFix {
     @JvmStatic
     fun checkRadix(radix: Int): Int {
@@ -46,16 +44,13 @@ object KtFix {
     fun trimIndent(value: String): String = value.trimIndent()
 
     @JvmStatic
-    fun clear(value: StringBuilder): StringBuilder {
-        value.setLength(0)
-        return value
-    }
+    fun clear(value: StringBuilder): StringBuilder = value.clear()
 
     @JvmStatic
     fun toIntOrNull(value: String): Int? = value.toIntOrNull()
 
     @JvmStatic
-    fun decodeToString(value: ByteArray): String = value.toString(Charsets.UTF_8)
+    fun decodeToString(value: ByteArray): String = value.decodeToString()
 
     @JvmStatic
     fun `endsWith$default`(value: String, suffix: String, ignoreCase: Boolean, mask: Int, marker: Any?): Boolean {
@@ -184,11 +179,12 @@ object KtFix {
     fun first(value: CharSequence): Char = value.first()
 
     @JvmStatic
-    fun copyOfRange(array: ByteArray, fromIndex: Int, toIndex: Int): ByteArray = java.util.Arrays.copyOfRange(array, fromIndex, toIndex)
+    fun copyOfRange(array: ByteArray, fromIndex: Int, toIndex: Int): ByteArray =
+        array.copyOfRange(fromIndex, toIndex)
 
     @JvmStatic
     fun plus(array: Array<Any?>, other: Array<Any?>): Array<Any?> {
-        val result = java.util.Arrays.copyOf(array, array.size + other.size)
+        val result = array.copyOf(array.size + other.size)
         System.arraycopy(other, 0, result, array.size, other.size)
         return result
     }
@@ -267,14 +263,14 @@ object KtFix {
     fun toList(array: Array<Any?>): List<Any?> = when (array.size) {
         0 -> emptyList()
         1 -> java.util.Collections.singletonList(array[0])
-        else -> java.util.ArrayList<Any?>(java.util.Arrays.asList(*array))
+        else -> java.util.ArrayList<Any?>(listOf(*array))
     }
 
     @JvmStatic
     fun listOf(element: Any?): List<Any?> = java.util.Collections.singletonList(element)
 
     @JvmStatic
-    fun arrayListOf(elements: Array<Any?>): ArrayList<Any?> = ArrayList(java.util.Arrays.asList(*elements))
+    fun arrayListOf(elements: Array<Any?>): ArrayList<Any?> = ArrayList(listOf(*elements))
 
     @JvmStatic
     fun emptyList(): List<Any?> = java.util.Collections.emptyList()
@@ -286,7 +282,7 @@ object KtFix {
     fun listOf(elements: Array<Any?>): List<Any?> = toList(elements)
 
     @JvmStatic
-    fun mutableListOf(elements: Array<Any?>): MutableList<Any?> = ArrayList(java.util.Arrays.asList(*elements))
+    fun mutableListOf(elements: Array<Any?>): MutableList<Any?> = ArrayList(listOf(*elements))
 
     @JvmStatic
     fun throwIndexOverflow(): Nothing = throw ArithmeticException("Index overflow has happened.")
@@ -321,7 +317,7 @@ object KtFix {
     }
 
     @JvmStatic
-    fun reverse(list: MutableList<Any?>) = java.util.Collections.reverse(list)
+    fun reverse(list: MutableList<Any?>) = list.reverse()
 
     @JvmStatic
     fun distinct(iterable: Iterable<Any?>): List<Any?> = ArrayList(java.util.LinkedHashSet<Any?>(toMutableListFromIterable(iterable)))
@@ -335,7 +331,7 @@ object KtFix {
 
     @JvmStatic
     fun first(iterable: Iterable<Any?>): Any? {
-        if (iterable is List<*>) return first(iterable as List<Any?>)
+        if (iterable is List<*>) return first(iterable)
         val it = iterable.iterator()
         if (!it.hasNext()) throw NoSuchElementException("Collection is empty.")
         return it.next()
@@ -480,14 +476,7 @@ object KtFix {
     }
 
     @JvmStatic
-    fun toList(iterable: Iterable<Any?>): List<Any?> = when (iterable) {
-        is Collection<*> -> when (iterable.size) {
-            0 -> emptyList()
-            1 -> java.util.Collections.singletonList(iterable.iterator().next())
-            else -> ArrayList(iterable as Collection<Any?>)
-        }
-        else -> toMutableListFromIterable(iterable).let { if (it.isEmpty()) emptyList() else it }
-    }
+    fun toList(iterable: Iterable<Any?>): List<Any?> = iterable.toList()
 
     @JvmStatic
     fun toMutableList(collection: Collection<Any?>): MutableList<Any?> = ArrayList(collection)
@@ -497,7 +486,7 @@ object KtFix {
         is Collection<*> -> when (iterable.size) {
             0 -> emptySet()
             1 -> java.util.Collections.singleton(iterable.iterator().next())
-            else -> java.util.LinkedHashSet(iterable as Collection<Any?>)
+            else -> java.util.LinkedHashSet(iterable)
         }
         else -> toMutableSetFromIterable(iterable)
     }
@@ -567,16 +556,16 @@ object KtFix {
     fun emptySet(): Set<Any?> = java.util.Collections.emptySet()
 
     @JvmStatic
-    fun hashSetOf(elements: Array<Any?>): HashSet<Any?> = HashSet(java.util.Arrays.asList(*elements))
+    fun hashSetOf(elements: Array<Any?>): HashSet<Any?> = HashSet(listOf(*elements))
 
     @JvmStatic
-    fun mutableSetOf(elements: Array<Any?>): MutableSet<Any?> = java.util.LinkedHashSet(java.util.Arrays.asList(*elements))
+    fun mutableSetOf(elements: Array<Any?>): MutableSet<Any?> = java.util.LinkedHashSet(listOf(*elements))
 
     @JvmStatic
     fun setOf(elements: Array<Any?>): Set<Any?> = when (elements.size) {
         0 -> emptySet()
         1 -> java.util.Collections.singleton(elements[0])
-        else -> java.util.LinkedHashSet(java.util.Arrays.asList(*elements))
+        else -> java.util.LinkedHashSet(listOf(*elements))
     }
 
     @JvmStatic
@@ -614,14 +603,14 @@ object KtFix {
         for (element in iterable) {
             count++
             if (count > 1) sb.append(separator)
-            if (limit < 0 || count <= limit) {
+            if (limit !in 0..<count) {
                 val text = transform?.invoke(element) ?: element.toString()
                 sb.append(text)
             } else {
                 break
             }
         }
-        if (limit >= 0 && count > limit) sb.append(truncated)
+        if (limit in 0..<count) sb.append(truncated)
         sb.append(postfix)
         return sb.toString()
     }
@@ -652,7 +641,7 @@ object KtFix {
     fun intercepted(continuation: kotlin.coroutines.Continuation<Any?>): kotlin.coroutines.Continuation<Any?> {
         val interceptor = continuation.context[kotlin.coroutines.ContinuationInterceptor]
         @Suppress("UNCHECKED_CAST")
-        return interceptor?.interceptContinuation(continuation) as? kotlin.coroutines.Continuation<Any?> ?: continuation
+        return interceptor?.interceptContinuation(continuation) ?: continuation
     }
 
     @JvmStatic
@@ -705,11 +694,11 @@ object KtFix {
         val actualOverwrite = if ((mask and 2) != 0) false else overwrite
         val actualBufferSize = if ((mask and 4) != 0) DEFAULT_BUFFER_SIZE else bufferSize
         if (target.exists()) {
-            if (!actualOverwrite) throw kotlin.io.FileAlreadyExistsException(from, target, "The destination file already exists.")
-            if (!target.delete()) throw kotlin.io.FileAlreadyExistsException(from, target, "Tried to overwrite the destination, but failed to delete it.")
+            if (!actualOverwrite) throw FileAlreadyExistsException(from, target, "The destination file already exists.")
+            if (!target.delete()) throw FileAlreadyExistsException(from, target, "Tried to overwrite the destination, but failed to delete it.")
         }
         if (from.isDirectory) {
-            if (!target.mkdirs()) throw kotlin.io.FileSystemException(from, target, "Failed to create target directory.")
+            if (!target.mkdirs()) throw FileSystemException(from, target, "Failed to create target directory.")
         } else {
             target.parentFile?.mkdirs()
             java.io.FileInputStream(from).use { input ->
@@ -743,7 +732,7 @@ object KtFix {
     @JvmStatic
     fun roundToInt(value: Float): Int {
         if (value.isNaN()) throw IllegalArgumentException("Cannot round NaN value.")
-        return Math.round(value)
+        return value.roundToInt()
     }
 
     @JvmStatic

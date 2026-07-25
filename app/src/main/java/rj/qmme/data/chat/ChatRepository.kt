@@ -3,11 +3,8 @@ package rj.qmme.data.chat
 import android.util.Log
 import com.tencent.qqnt.kernel.nativeinterface.GetMsgsAndStatusRecord
 import com.tencent.qqnt.kernel.nativeinterface.GetMsgsStatusEnum
-import com.tencent.qqnt.kernel.nativeinterface.IGetAioFirstViewLatestMsgCallback
-import com.tencent.qqnt.kernel.nativeinterface.IGetMsgWithStatusCallback
 import com.tencent.qqnt.kernel.nativeinterface.IKernelMsgListener
 import com.tencent.qqnt.kernel.nativeinterface.IKernelMsgService
-import com.tencent.qqnt.kernel.nativeinterface.IOperateCallback
 import com.tencent.qqnt.kernel.nativeinterface.MsgAttributeInfo
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
 import com.tencent.qqnt.kernel.nativeinterface.MsgRecord
@@ -78,15 +75,14 @@ class ChatRepository {
             service.getAioFirstViewLatestMsgs(
                 contact,
                 count,
-                object : IGetAioFirstViewLatestMsgCallback {
-                    override fun onResult(
-                        errorCode: Int,
-                        errorMessage: String?,
-                        messages: ArrayList<MsgRecord>?,
-                        needContinue: Boolean,
-                    ) = callback(errorCode, errorMessage, messages, needContinue)
-                },
-            )
+            ) { errorCode, errorMessage, messages, needContinue ->
+                callback(
+                    errorCode,
+                    errorMessage,
+                    messages,
+                    needContinue
+                )
+            }
             true
         }.onFailure { Log.w(TAG, "load latest messages failed", it) }
             .getOrDefault(false)
@@ -113,15 +109,14 @@ class ChatRepository {
                     isIncludeSelf = false
                     appid = 0L
                 },
-                object : IGetMsgWithStatusCallback {
-                    override fun onResult(
-                        errorCode: Int,
-                        errorMessage: String?,
-                        status: GetMsgsStatusEnum?,
-                        messages: ArrayList<MsgRecord>?,
-                    ) = callback(errorCode, errorMessage, status, messages)
-                },
-            )
+            ) { errorCode, errorMessage, status, messages ->
+                callback(
+                    errorCode,
+                    errorMessage,
+                    status,
+                    messages
+                )
+            }
             true
         }.onFailure { Log.w(TAG, "load older messages failed", it) }
             .getOrDefault(false)
@@ -219,12 +214,7 @@ class ChatRepository {
                 contact,
                 elements,
                 hashMapOf<Int, MsgAttributeInfo>(),
-                object : IOperateCallback {
-                    override fun onResult(errorCode: Int, errorMessage: String?) {
-                        callback(errorCode, errorMessage)
-                    }
-                },
-            )
+            ) { errorCode, errorMessage -> callback(errorCode, errorMessage) }
             true
         }.onFailure { Log.w(TAG, "send message failed", it) }
             .getOrDefault(false)
@@ -244,12 +234,7 @@ class ChatRepository {
             service.recallMsg(
                 contact,
                 arrayListOf(messageId),
-                object : IOperateCallback {
-                    override fun onResult(errorCode: Int, errorMessage: String?) {
-                        callback(errorCode, errorMessage)
-                    }
-                },
-            )
+            ) { errorCode, errorMessage -> callback(errorCode, errorMessage) }
             true
         }.onFailure { Log.w(TAG, "recall message failed id=$messageId", it) }
             .getOrDefault(false)
@@ -267,12 +252,7 @@ class ChatRepository {
             service.deleteMsg(
                 contact,
                 ArrayList(ids),
-                object : IOperateCallback {
-                    override fun onResult(errorCode: Int, errorMessage: String?) {
-                        callback(errorCode, errorMessage)
-                    }
-                },
-            )
+            ) { errorCode, errorMessage -> callback(errorCode, errorMessage) }
             true
         }.onFailure { Log.w(TAG, "delete messages failed ids=$ids", it) }
             .getOrDefault(false)
@@ -289,12 +269,7 @@ class ChatRepository {
             service.resendMsg(
                 contact,
                 messageId,
-                object : IOperateCallback {
-                    override fun onResult(errorCode: Int, errorMessage: String?) {
-                        callback(errorCode, errorMessage)
-                    }
-                },
-            )
+            ) { errorCode, errorMessage -> callback(errorCode, errorMessage) }
             true
         }.onFailure { Log.w(TAG, "resend message failed id=$messageId", it) }
             .getOrDefault(false)
@@ -314,12 +289,7 @@ class ChatRepository {
         return runCatching {
             service.setMsgRead(
                 contact,
-                object : IOperateCallback {
-                    override fun onResult(errorCode: Int, errorMessage: String?) {
-                        callback(errorCode, errorMessage)
-                    }
-                },
-            )
+            ) { errorCode, errorMessage -> callback(errorCode, errorMessage) }
             true
         }.onFailure { Log.w(TAG, "mark messages read failed", it) }
             .getOrDefault(false)
@@ -342,11 +312,11 @@ class ChatRepository {
         java.lang.Boolean.TYPE -> false
         java.lang.Byte.TYPE -> 0.toByte()
         java.lang.Short.TYPE -> 0.toShort()
-        java.lang.Integer.TYPE -> 0
+        Integer.TYPE -> 0
         java.lang.Long.TYPE -> 0L
         java.lang.Float.TYPE -> 0f
         java.lang.Double.TYPE -> 0.0
-        java.lang.Character.TYPE -> '\u0000'
+        Character.TYPE -> '\u0000'
         else -> null
     }
 

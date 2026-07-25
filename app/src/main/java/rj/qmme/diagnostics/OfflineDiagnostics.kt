@@ -1,9 +1,9 @@
 package rj.qmme.diagnostics
 
-import android.app.Application
 import android.content.Context
 import android.os.Process
 import android.util.Log
+import rj.qmme.QmmeApp
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -28,7 +28,7 @@ object OfflineDiagnostics {
         val line = buildString {
             append(formatter.format(Date()))
             append(" pid=").append(Process.myPid())
-            append(" process=").append(runCatching { Application.getProcessName() }.getOrDefault("unknown"))
+            append(" process=").append(runCatching { QmmeApp.currentProcessNameByActivityThread }.getOrDefault("unknown"))
             append(" thread=").append(Thread.currentThread().name.replace(' ', '_'))
             append(" event=").append(sanitize(event))
             if (details.isNotBlank()) append(' ').append(sanitize(details))

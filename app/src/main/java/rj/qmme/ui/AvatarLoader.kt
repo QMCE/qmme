@@ -7,12 +7,14 @@ import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.util.Log
 import android.util.LruCache
-import android.view.View
 import android.widget.ImageView
-import com.google.android.material.appbar.MaterialToolbar
 import androidx.core.graphics.drawable.RoundedBitmapDrawableFactory
+import androidx.core.graphics.scale
+import androidx.core.net.toUri
+import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.imageview.ShapeableImageView
 import com.google.android.material.shape.ShapeAppearanceModel
+import com.highcapable.betterandroid.system.extension.utils.AndroidVersion
 import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qqnt.avatar.IAvatarLoaderApi
 import com.tencent.qqnt.avatar.IAvatarRequestLoad
@@ -23,6 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -37,7 +40,6 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.WeakHashMap
-import kotlin.coroutines.coroutineContext
 
 /**
  * Small native ImageView loader used by the RecyclerView rows.
@@ -306,7 +308,7 @@ internal object AvatarLoader {
         val sized = if (bitmap.width == targetPx && bitmap.height == targetPx) {
             bitmap
         } else {
-            Bitmap.createScaledBitmap(bitmap, targetPx, targetPx, true)
+            bitmap.scale(targetPx, targetPx)
         }
         return RoundedBitmapDrawableFactory.create(toolbar.resources, sized).apply {
             isCircular = true
@@ -328,7 +330,7 @@ internal object AvatarLoader {
         }
 
         for (url in urls) {
-            coroutineContext.ensureActive()
+            currentCoroutineContext().ensureActive()
             val key = "url:$url"
             memoryCache.get(key)?.let { return it }
 
@@ -342,7 +344,7 @@ internal object AvatarLoader {
             }
 
             val bytes = download(url) ?: continue
-            coroutineContext.ensureActive()
+            currentCoroutineContext().ensureActive()
             val bitmap = decodeBytes(bytes)
             if (bitmap == null) {
                 Log.d(TAG, "not a bitmap: $url")
@@ -358,7 +360,7 @@ internal object AvatarLoader {
     private fun decodeLocal(context: Context, path: String): Bitmap? {
         val raw = path.trim()
         return try {
-            val uri = Uri.parse(raw)
+            val uri = raw.toUri()
             when (uri.scheme?.lowercase()) {
                 "content" -> context.contentResolver.openInputStream(uri)?.use(::decodeStream)
                 "file" -> uri.path?.let { decodeFile(File(it)) }
@@ -407,7 +409,7 @@ internal object AvatarLoader {
 
     private fun sampleSize(width: Int, height: Int): Int {
         var sample = 1
-        var maxDimension = maxOf(width, height)
+        val maxDimension = maxOf(width, height)
         while (maxDimension / sample > MAX_DECODE_DIMENSION) sample *= 2
         return sample
     }
@@ -431,7 +433,12 @@ internal object AvatarLoader {
                 Log.d(TAG, "avatar http=$code url=$url")
                 return null
             }
-            if (connection.contentLengthLong > MAX_DOWNLOAD_BYTES) return null
+            if (if (AndroidVersion.isAtLeast(AndroidVersion.N)) {
+                    connection.contentLengthLong > MAX_DOWNLOAD_BYTES
+                } else {
+                    TODO("VERSION.SDK_INT < N")
+                }
+            ) return null
             connection.inputStream.use { it.readCappedBytes() }
         } catch (error: IOException) {
             Log.d(TAG, "avatar http failed url=$url", error)

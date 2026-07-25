@@ -1,9 +1,9 @@
 package rj.qmme.kernel;
 
 import android.content.Context;
-import android.os.Build;
 import android.util.Log;
 
+import com.tencent.mobileqq.msf.core.NetConnInfoCenter;
 import com.tencent.qqnt.kernel.nativeinterface.AppSetting;
 import com.tencent.qqnt.kernel.nativeinterface.AvifTranscodeInfo;
 import com.tencent.qqnt.kernel.nativeinterface.AvifTranscodeResult;
@@ -19,15 +19,13 @@ import com.tencent.qqnt.kernel.nativeinterface.OpentelemetryTracePlan;
 import com.tencent.qqnt.kernel.nativeinterface.RichMediaImgSize;
 import com.tencent.qqnt.kernel.nativeinterface.SendRequestParam;
 import com.tencent.qqnt.kernel.nativeinterface.WrapperEngineGlobalConfig;
-import com.tencent.qqnt.kernel.nativeinterface.MsfRspInfo;
-import com.tencent.qqnt.kernel.nativeinterface.ThumbConfig;
-import com.tencent.mobileqq.msf.core.NetConnInfoCenter;
-import rj.qmme.diagnostics.OfflineDiagnostics;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Objects;
 
 import mqq.app.AppRuntime;
+import rj.qmme.diagnostics.OfflineDiagnostics;
 
 /**
  * Project-owned equivalent of the small native-engine bootstrap performed by
@@ -56,7 +54,7 @@ final class ProjectKernelBootstrap {
             }
 
             Context appContext = context.getApplicationContext();
-            String root = appContext.getFilesDir().getParentFile().getPath();
+            String root = Objects.requireNonNull(appContext.getFilesDir().getParentFile()).getPath();
             InitGlobalPathConfig paths = new InitGlobalPathConfig(
                     "",
                     root + "/databases/",

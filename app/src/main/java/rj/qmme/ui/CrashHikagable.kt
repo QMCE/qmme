@@ -7,9 +7,9 @@ import androidx.core.widget.TextViewCompat
 import com.highcapable.hikage.core.Hikage
 import com.highcapable.hikage.core.base.Hikagable
 import com.highcapable.hikage.core.layout.LayoutParams
-import com.highcapable.hikage.widget.android.widget.LinearLayout as HLinearLayout
-import com.highcapable.hikage.widget.android.widget.ScrollView as HScrollView
-import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView as HMaterialTextView
+import com.highcapable.hikage.widget.android.widget.LinearLayout
+import com.highcapable.hikage.widget.android.widget.ScrollView
+import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView
 import rj.qmme.CrashReport
 
 /** M3 crash report screen, built entirely as a native Hikage hierarchy. */
@@ -18,7 +18,7 @@ class CrashHikagable(
     private val report: CrashReport,
 ) : HikageScreen {
     override val hikage: Hikage.Delegate<*> = Hikagable {
-        HScrollView(
+        ScrollView(
             lparams = LayoutParams(matchParent = true),
             init = {
                 isFillViewport = true
@@ -26,14 +26,14 @@ class CrashHikagable(
                 EdgeToEdgeInsets.applyContentInsets(this)
             },
         ) {
-            HLinearLayout(
+            LinearLayout(
                 lparams = LayoutParams(widthMatchParent = true),
                 init = {
                     orientation = LinearLayout.VERTICAL
                     setPadding(dp(16), dp(16), dp(16), dp(24))
                 },
             ) {
-                HMaterialTextView(
+                MaterialTextView(
                     lparams = LayoutParams(widthMatchParent = true),
                     init = {
                         text = "应用发生崩溃"
@@ -44,7 +44,7 @@ class CrashHikagable(
                         )
                     },
                 )
-                HMaterialTextView(
+                MaterialTextView(
                     lparams = LayoutParams(widthMatchParent = true) {
                         topMargin = dp(16)
                     },

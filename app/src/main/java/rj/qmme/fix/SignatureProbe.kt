@@ -3,7 +3,6 @@ package rj.qmme.fix
 import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
-import oicq.wlogin_sdk.tools.MD5
 import oicq.wlogin_sdk.tools.util
 import java.security.MessageDigest
 
@@ -13,6 +12,7 @@ object SignatureProbe {
         runCatching {
             @Suppress("DEPRECATION")
             val pi = context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
+            @Suppress("DEPRECATION")
             val sig = pi.signatures?.firstOrNull()
             val md5Bytes = sig?.toByteArray()?.let { md5Hex(it) }
             val md5Chars = sig?.toCharsString()?.let { md5Hex(it.toByteArray()) }

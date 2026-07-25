@@ -1,11 +1,12 @@
 package rj.qmme.runtime
 
+import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
-import android.os.Build
 import android.os.Process
 import android.util.Log
+import com.highcapable.betterandroid.system.extension.utils.AndroidVersion
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -360,7 +361,7 @@ object RuntimeCoordinator {
             ?: resolveProcessName(applicationContext)
             ?: "unknown"
         val mobileProcess = readMobileQQProcessName() ?: "unknown"
-        val mobileReportedProcess = runCatching { mobile?.getQQProcessName() }.getOrNull() ?: "unknown"
+        val mobileReportedProcess = runCatching { mobile?.qqProcessName }.getOrNull() ?: "unknown"
         val currentRuntimeIdentity = current?.runtimeIdentity?.toString() ?: "none"
         val observedIdentity = observedRuntime?.let(::identity)?.toString() ?: "none"
         val account = readCurrentUin(observedRuntime) ?: current?.accountUin
@@ -376,7 +377,7 @@ object RuntimeCoordinator {
             "currentUin=${redactUin(account)}",
             "isLogin=${safeIsLogin(observedRuntime)}",
             "isRunning=${safeIsRunning(observedRuntime)}",
-            "mobileQQRuntimeReady=${runCatching { mobile?.isRuntimeReady() }.getOrNull() ?: "unknown"}",
+            "mobileQQRuntimeReady=${runCatching { mobile?.isRuntimeReady }.getOrNull() ?: "unknown"}",
             "state=${lifecycleState.value}",
             "source=${safeField(source)}",
             "reason=${safeField(reason ?: "none")}",
@@ -403,6 +404,7 @@ object RuntimeCoordinator {
             .get(null) as? String
     }.getOrNull()
 
+    @SuppressLint("PrivateApi", "DiscouragedPrivateApi")
     private fun resolveProcessName(context: Context?): String? {
         if (context == null) return null
         val fromActivityThread = runCatching {
@@ -416,7 +418,7 @@ object RuntimeCoordinator {
         }.getOrNull()
         if (!fromActivityThread.isNullOrBlank()) return fromActivityThread
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        if (AndroidVersion.isAtLeast(AndroidVersion.P)) {
             runCatching { Application.getProcessName() }
                 .getOrNull()
                 ?.takeIf { it.isNotBlank() }

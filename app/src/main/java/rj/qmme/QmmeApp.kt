@@ -1,30 +1,31 @@
 package rj.qmme
 
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.app.ActivityManager
-import android.app.Application
 import android.app.ActivityOptions
 import android.app.AlarmManager
+import android.app.Application
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.ServiceConnection
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.multidex.MultiDex
+import com.highcapable.betterandroid.system.extension.utils.AndroidVersion
+import com.highcapable.betterandroid.ui.extension.component.hostActivity
 import com.tencent.mmkv.MMKV
 import com.tencent.mobileqq.qmmkv.MMKVHandlerImpl
 import com.tencent.mobileqq.qmmkv.QMMKV
+import com.tencent.qphone.base.remote.SimpleAccount
 import com.tencent.qqnt.watch.app.WatchAppInterface
 import com.tencent.qqnt.watch.app.WatchApplicationDelegate
-import com.tencent.qphone.base.remote.SimpleAccount
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import mqq.app.AppRuntime
@@ -128,7 +129,7 @@ class QmmeApp : WatchApplicationDelegate() {
             if (uin.isBlank()) return "invalid account"
             val mobile = sMobileQQ ?: return "MobileQQ null"
             return runCatching {
-                mobile.setLastLoginUin(uin)
+                mobile.lastLoginUin = uin
                 mobile.setSortAccountList(arrayListOf(account))
                 val initialRuntime = ensureRuntime(mobile) ?: return "runtime null"
                 RuntimeCoordinator.markAccountBinding(
@@ -210,7 +211,7 @@ class QmmeApp : WatchApplicationDelegate() {
             val account = runCatching { LoginPrefs.loadAccount(app) }.getOrNull() ?: return null
             val uin = runCatching { account.uin }.getOrNull().orEmpty()
             if (uin.isBlank()) return null
-            runCatching { app.setLastLoginUin(uin) }
+            runCatching { app.lastLoginUin = uin }
             runCatching { app.setSortAccountList(arrayListOf(account)) }
             Log.i(
                 "QMME",
@@ -238,15 +239,14 @@ class QmmeApp : WatchApplicationDelegate() {
                     loginRestartScheduled.set(false)
                     return false
                 }
-            val pendingOptions = if (Build.VERSION.SDK_INT >= 34) {
+            @Suppress("DEPRECATION")
+            val pendingOptions = if (AndroidVersion.isAtLeast(AndroidVersion.U)) {
                 ActivityOptions.makeBasic().apply {
-                    setPendingIntentCreatorBackgroundActivityStartMode(
-                        if (Build.VERSION.SDK_INT >= 35) {
-                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
-                        } else {
-                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-                        },
-                    )
+                    pendingIntentCreatorBackgroundActivityStartMode = if (AndroidVersion.isAtLeast(AndroidVersion.BAKLAVA)) {
+                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
+                    } else {
+                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                    }
                 }.toBundle()
             } else {
                 null
@@ -258,14 +258,14 @@ class QmmeApp : WatchApplicationDelegate() {
                 PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 pendingOptions,
             )
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            val alarmManager = context.getSystemService(ALARM_SERVICE) as? AlarmManager
                 ?: run {
                     loginRestartScheduled.set(false)
                     return false
                 }
             val triggerAt = SystemClock.elapsedRealtime() + 1_500L
             val scheduled = runCatching {
-                if (Build.VERSION.SDK_INT >= 31 && !alarmManager.canScheduleExactAlarms()) {
+                if (AndroidVersion.isAtLeast(AndroidVersion.S) && !alarmManager.canScheduleExactAlarms()) {
                     alarmManager.setAndAllowWhileIdle(
                         AlarmManager.ELAPSED_REALTIME_WAKEUP,
                         triggerAt,
@@ -290,7 +290,7 @@ class QmmeApp : WatchApplicationDelegate() {
                         "component=${launchIntent.component}",
             )
             Handler(Looper.getMainLooper()).postDelayed({
-                runCatching { (context as? Activity)?.finishAndRemoveTask() }
+                runCatching { (context.hostActivity)?.finishAndRemoveTask() }
                 Process.killProcess(Process.myPid())
             }, 700L)
             return true
@@ -298,7 +298,7 @@ class QmmeApp : WatchApplicationDelegate() {
 
         fun forceExit(context: Context) {
             Handler(Looper.getMainLooper()).post {
-                runCatching { (context as? Activity)?.finishAndRemoveTask() }
+                runCatching { (context.hostActivity)?.finishAndRemoveTask() }
                 Process.killProcess(Process.myPid())
                 exitProcess(0)
             }
@@ -425,6 +425,22 @@ class QmmeApp : WatchApplicationDelegate() {
                 "QmmeApp.ensureRuntime.peekAfterDoInit",
             )
         }
+
+        /**
+         * Get current process name.
+         * Quicker than ActivityManager.
+         */
+        val currentProcessNameByActivityThread: String?
+            @SuppressLint("DiscouragedPrivateApi", "PrivateApi")
+            get() = runCatching {
+                val declaredMethod: Method = Class.forName(
+                    "android.app.ActivityThread",
+                    false,
+                    Application::class.java.classLoader
+                ).getDeclaredMethod("currentProcessName")
+                declaredMethod.isAccessible = true
+                declaredMethod.invoke(null) as String
+            }.getOrNull()
     }
 
     override fun attachBaseContext(base: Context) {
@@ -523,28 +539,12 @@ class QmmeApp : WatchApplicationDelegate() {
     }
 
     private fun isMainProcess(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        return if (AndroidVersion.isAtLeast(AndroidVersion.P)) {
             processName == BuildConfig.APPLICATION_ID
         } else (currentProcessNameByActivityThread
             ?: currentProcessNameByActivityManager
                 ) == BuildConfig.APPLICATION_ID
     }
-
-    /**
-     * Get current process name.
-     * Quicker than ActivityManager.
-     */
-    val currentProcessNameByActivityThread: String?
-        @SuppressLint("DiscouragedPrivateApi", "PrivateApi")
-        get() = runCatching {
-            val declaredMethod: Method = Class.forName(
-                "android.app.ActivityThread",
-                false,
-                Application::class.java.classLoader
-            ).getDeclaredMethod("currentProcessName")
-            declaredMethod.isAccessible = true
-            declaredMethod.invoke(null) as String
-        }.getOrNull()
 
     /**
      * Get current process name.
@@ -612,11 +612,11 @@ class QmmeApp : WatchApplicationDelegate() {
         // Keep the apktool WatchApplicationDelegate contract: only the package
         // process owns a WatchAppInterface. MobileQQ is responsible for init(),
         // account restoration, setLogined(), onCreate(), and publishing
-        // mAppRuntime; this factory must remain side-effect free beyond creating
+        // mAppRuntime; this factory must remain side effect free beyond creating
         // the object and assigning its process suffix.
         if (processName != BuildConfig.APPLICATION_ID) return null
         val runtime = WatchAppInterface(this, processName)
-        val suffix = MobileQQ.getProcessSuffix(processName, BuildConfig.APPLICATION_ID)
+        val suffix = getProcessSuffix(processName, BuildConfig.APPLICATION_ID)
         runtime.setProcessName(suffix)
         sAppRuntime = runtime
         RuntimeCoordinator.registerRuntime(
@@ -666,24 +666,26 @@ class QmmeApp : WatchApplicationDelegate() {
         return super.bindService(fixIntent(service)!!, conn, flags)
     }
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun registerReceiver(
         receiver: BroadcastReceiver?,
         filter: IntentFilter
     ): Intent? {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        return if (AndroidVersion.isAtLeast(AndroidVersion.T)) {
             super.registerReceiver(receiver, filter, receiverExportFlag(filter))
         } else {
             super.registerReceiver(receiver, filter)
         }
     }
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun registerReceiver(
         receiver: BroadcastReceiver?,
         filter: IntentFilter,
         broadcastPermission: String?,
         scheduler: Handler?
     ): Intent? {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        return if (AndroidVersion.isAtLeast(AndroidVersion.T)) {
             super.registerReceiver(
                 receiver,
                 filter,
@@ -696,11 +698,12 @@ class QmmeApp : WatchApplicationDelegate() {
         }
     }
 
+    @RequiresApi(AndroidVersion.T)
     private fun receiverExportFlag(filter: IntentFilter): Int {
         val hasPlatformAction = (0 until filter.countActions()).any { index ->
             filter.getAction(index)?.startsWith("android.") == true
         }
-        return if (hasPlatformAction) Context.RECEIVER_EXPORTED else Context.RECEIVER_NOT_EXPORTED
+        return if (hasPlatformAction) RECEIVER_EXPORTED else RECEIVER_NOT_EXPORTED
     }
 
     override fun isUserAllow(): Boolean = true

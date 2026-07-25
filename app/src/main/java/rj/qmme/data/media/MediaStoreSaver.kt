@@ -3,26 +3,27 @@ package rj.qmme.data.media
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
-import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import com.highcapable.betterandroid.system.extension.utils.AndroidVersion
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import kotlinx.coroutines.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.core.net.toUri
 
 /** Saves a local or remote image into the user's Pictures/QMME collection. */
 class MediaStoreSaver {
-    suspend fun saveImage(context: Context, source: String): Result<Unit> {
+    fun saveImage(context: Context, source: String): Result<Unit> {
         return try {
             require(source.isNotBlank()) { "图片地址不可用" }
             val opened = openSource(context.applicationContext, source)
             try {
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                if (AndroidVersion.isLessThan(AndroidVersion.Q)) {
                     saveLegacy(context, opened)
                 } else {
                     saveModern(context, opened)
@@ -90,7 +91,7 @@ class MediaStoreSaver {
     }
 
     private fun openSource(context: Context, source: String): OpenedSource {
-        val uri = runCatching { Uri.parse(source) }.getOrNull()
+        val uri = runCatching { source.toUri() }.getOrNull()
         return when (uri?.scheme?.lowercase(Locale.ROOT)) {
             "http", "https" -> {
                 val connection = (URL(source).openConnection() as HttpURLConnection).apply {

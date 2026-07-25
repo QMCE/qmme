@@ -6,6 +6,7 @@ import android.os.Build;
 import android.os.Parcel;
 import android.os.Parcelable;
 
+@SuppressWarnings("deprecation")
 final class PackageInfoSignatureCreator implements Parcelable.Creator<PackageInfo> {
     private final Parcelable.Creator<PackageInfo> delegate;
     private final String packageName;

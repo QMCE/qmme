@@ -6,25 +6,25 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import android.widget.ImageView
-import androidx.core.content.ContextCompat
+import android.widget.LinearLayout
 import androidx.core.widget.TextViewCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.MaterialColors
-import com.google.android.material.textview.MaterialTextView
 import com.google.android.material.imageview.ShapeableImageView
-import com.highcapable.hikage.core.Hikage
-import com.highcapable.hikage.core.layout.LayoutParams
+import com.google.android.material.textview.MaterialTextView
+import com.highcapable.betterandroid.ui.extension.component.base.getDrawableCompat
+import com.highcapable.betterandroid.ui.extension.view.textColor
 import com.highcapable.hikage.core.base.Hikagable
-import com.highcapable.hikage.widget.android.widget.FrameLayout as HFrameLayout
-import com.highcapable.hikage.widget.android.widget.LinearLayout as HLinearLayout
-import com.highcapable.hikage.widget.com.google.android.material.card.MaterialCardView as HMaterialCardView
-import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView as HMaterialTextView
-import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView as HShapeableImageView
+import com.highcapable.hikage.core.layout.LayoutParams
+import com.highcapable.hikage.widget.android.widget.FrameLayout
+import com.highcapable.hikage.widget.android.widget.LinearLayout
+import com.highcapable.hikage.widget.com.google.android.material.card.MaterialCardView
+import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView
+import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView
 import rj.qmme.R
 import rj.qmme.viewmodel.ChatDetailViewModel
 import java.util.Date
@@ -47,13 +47,13 @@ class MessageAdapter(
         val maxBubbleWidth = (parent.resources.displayMetrics.widthPixels * 0.72f).toInt()
         val imageWidth = minOf(dp(parent, 240), maxBubbleWidth)
         val hikage = Hikagable {
-            HFrameLayout(
+            FrameLayout(
                 lparams = LayoutParams(widthMatchParent = true),
                 init = {
                     setPadding(dp(parent, 16), dp(parent, 1), dp(parent, 16), dp(parent, 1))
                 },
             ) {
-                rowContainer = HLinearLayout(
+                rowContainer = LinearLayout(
                     lparams = LayoutParams(
                         width = ViewGroup.LayoutParams.WRAP_CONTENT,
                         height = ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -62,7 +62,7 @@ class MessageAdapter(
                         orientation = LinearLayout.HORIZONTAL
                     },
                 ) {
-                    avatar = HShapeableImageView(
+                    avatar = ShapeableImageView(
                         lparams = LayoutParams(width = dp(parent, 36), height = dp(parent, 36)) {
                             gravity = Gravity.TOP
                             rightMargin = dp(parent, 8)
@@ -74,14 +74,14 @@ class MessageAdapter(
                             visibility = View.GONE
                         },
                     )
-                    HLinearLayout(
+                    LinearLayout(
                         lparams = LayoutParams(
                             width = ViewGroup.LayoutParams.WRAP_CONTENT,
                             height = ViewGroup.LayoutParams.WRAP_CONTENT,
                         ),
                         init = { orientation = LinearLayout.VERTICAL },
                     ) {
-                        metaRow = HLinearLayout(
+                        metaRow = LinearLayout(
                             lparams = LayoutParams(
                                 width = ViewGroup.LayoutParams.WRAP_CONTENT,
                                 height = ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -95,7 +95,7 @@ class MessageAdapter(
                                 gravity = Gravity.CENTER_VERTICAL
                             },
                         ) {
-                            nickname = HMaterialTextView(
+                            nickname = MaterialTextView(
                                 lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
                                     rightMargin = dp(parent, 6)
                                 },
@@ -110,7 +110,7 @@ class MessageAdapter(
                                     visibility = View.GONE
                                 },
                             )
-                            time = HMaterialTextView(
+                            time = MaterialTextView(
                                 lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
                                 init = {
                                     TextViewCompat.setTextAppearance(
@@ -121,7 +121,7 @@ class MessageAdapter(
                                 },
                             )
                         }
-                        card = HMaterialCardView(
+                        card = MaterialCardView(
                             lparams = LayoutParams(
                                 width = ViewGroup.LayoutParams.WRAP_CONTENT,
                                 height = ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -134,7 +134,7 @@ class MessageAdapter(
                                 isFocusable = true
                             },
                         ) {
-                            HLinearLayout(
+                            LinearLayout(
                                 lparams = LayoutParams(
                                     width = ViewGroup.LayoutParams.WRAP_CONTENT,
                                     height = ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -144,7 +144,7 @@ class MessageAdapter(
                                     setPadding(dp(parent, 12), dp(parent, 8), dp(parent, 12), dp(parent, 8))
                                 },
                             ) {
-                                image = HShapeableImageView(
+                                image = ShapeableImageView(
                                     lparams = LayoutParams(
                                         width = imageWidth,
                                         height = dp(parent, 180),
@@ -159,7 +159,7 @@ class MessageAdapter(
                                         contentDescription = "图片消息"
                                     },
                                 )
-                                body = HMaterialTextView(
+                                body = MaterialTextView(
                                     lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
                                     init = {
                                         TextViewCompat.setTextAppearance(
@@ -208,7 +208,7 @@ class MessageAdapter(
     }
 
     class Holder(
-        itemView: android.view.View,
+        itemView: View,
         private val rowContainer: LinearLayout,
         private val avatar: ShapeableImageView,
         private val metaRow: LinearLayout,
@@ -249,7 +249,7 @@ class MessageAdapter(
                         imageView = avatar,
                         localPath = null,
                         urls = AvatarSources.forSenderUin(message.senderUin),
-                        fallback = ContextCompat.getDrawable(context, R.drawable.ic_account_circle),
+                        fallback = context.getDrawableCompat(R.drawable.ic_account_circle),
                         circular = true,
                     )
                 }
@@ -280,12 +280,14 @@ class MessageAdapter(
                 val showNickname = isGroup && !outgoing && firstOfGroup && message.senderName.isNotBlank()
                 nickname.visibility = if (showNickname) View.VISIBLE else View.GONE
                 if (showNickname) nickname.text = message.senderName
-                nickname.setTextColor(
-                    MaterialColors.getColor(nickname, com.google.android.material.R.attr.colorOnSurfaceVariant),
+                nickname.textColor = MaterialColors.getColor(
+                    nickname,
+                    com.google.android.material.R.attr.colorOnSurfaceVariant
                 )
 
-                time.setTextColor(
-                    MaterialColors.getColor(time, com.google.android.material.R.attr.colorOnSurfaceVariant),
+                time.textColor = MaterialColors.getColor(
+                    time,
+                    com.google.android.material.R.attr.colorOnSurfaceVariant
                 )
                 time.text = buildString {
                     val millis = message.timestampSeconds * 1000L
@@ -317,7 +319,7 @@ class MessageAdapter(
                     com.google.android.material.R.attr.colorOnSurface
                 },
             )
-            body.setTextColor(onContainer)
+            body.textColor = onContainer
 
             val picture = message.image
             if (picture == null) {

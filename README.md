@@ -56,14 +56,14 @@ adb shell am start -n rj.qmme/.ui.MainActivity
 
 ## 技术栈
 
-| 类别 | 选型 |
-| --- | --- |
-| 语言 | Kotlin 2.4.0 + Java 17 |
-| 构建 | Android Gradle Plugin 9.3.0，Gradle 9.5.0 |
-| UI | Hikage 1.1.1（原生 View + Kotlin DSL）、BetterAndroid、Material Components、RecyclerView |
-| 架构 | MVVM（AndroidX ViewModel + Lifecycle）、Kotlin Coroutines / StateFlow |
-| 底层 | com.tencent.qqlite 9.0.7（MSF + NT Kernel，`appId=537282233`）、MMKV/QMMKV |
-| ABI | 仅 `armeabi-v7a`；`minSdk 23`，`targetSdk / compileSdk 37` |
+| 类别  | 选型                                                                                |
+|-----|-----------------------------------------------------------------------------------|
+| 语言  | Kotlin 2.4.0 + Java 17                                                            |
+| 构建  | Android Gradle Plugin 9.3.0，Gradle 9.5.0                                          |
+| UI  | Hikage 1.1.1（原生 View + Kotlin DSL）、BetterAndroid、Material Components、RecyclerView |
+| 架构  | MVVM（AndroidX ViewModel + Lifecycle）、Kotlin Coroutines / StateFlow                |
+| 底层  | com.tencent.qqlite 9.0.7（MSF + NT Kernel，`appId=537282233`）、MMKV/QMMKV            |
+| ABI | 仅 `armeabi-v7a`；`minSdk 23`，`targetSdk / compileSdk 37`                           |
 
 ---
 

@@ -1,5 +1,6 @@
 package rj.qmme.ui
 
+import android.annotation.SuppressLint
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
@@ -7,7 +8,6 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import androidx.core.content.ContextCompat
 import androidx.core.widget.TextViewCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
@@ -16,17 +16,18 @@ import com.google.android.material.imageview.ShapeableImageView
 import com.google.android.material.listitem.ListItemCardView
 import com.google.android.material.listitem.ListItemViewHolder
 import com.google.android.material.textview.MaterialTextView
+import com.highcapable.betterandroid.ui.extension.component.base.getDrawableCompat
 import com.highcapable.hikage.core.base.Hikagable
 import com.highcapable.hikage.core.layout.LayoutParams
-import com.highcapable.hikage.widget.android.widget.LinearLayout as HLinearLayout
-import com.highcapable.hikage.widget.com.google.android.material.divider.MaterialDivider as HMaterialDivider
-import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView as HShapeableImageView
-import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView as HMaterialTextView
+import com.highcapable.hikage.widget.android.widget.LinearLayout
+import com.highcapable.hikage.widget.com.google.android.material.divider.MaterialDivider
+import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView
+import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView
 import com.tencent.qqnt.avatar.WatchAvatarView
 import rj.qmme.R
-import rj.qmme.ui.hikage.SegmentedListItemCardView as HSegmentedListItemCardView
-import rj.qmme.ui.hikage.ListItemLayout as HListItemLayout
 import rj.qmme.viewmodel.ContactsViewModel
+import rj.qmme.ui.hikage.ListItemLayout as HListItemLayout
+import rj.qmme.ui.hikage.SegmentedListItemCardView as HSegmentedListItemCardView
 
 /**
  * Official Material 3 segmented list items. Each contact group is one visual
@@ -76,7 +77,8 @@ class ContactsAdapter(
 
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         when (val row = rows[position]) {
-            is Row.Header -> (holder as HeaderHolder).title.text =
+            is Row.Header -> @SuppressLint("SetTextI18n")
+            (holder as HeaderHolder).title.text =
                 "${row.category.name} (${row.category.buddies.size})"
 
             is Row.Buddy -> {
@@ -104,10 +106,7 @@ class ContactsAdapter(
                     imageView = buddyHolder.avatar,
                     localPath = buddy.avatarPath,
                     urls = AvatarSources.forBuddy(buddy),
-                    fallback = ContextCompat.getDrawable(
-                        buddyHolder.itemView.context,
-                        R.drawable.ic_launcher_foreground,
-                    ),
+                    fallback = buddyHolder.itemView.context.getDrawableCompat(R.drawable.ic_launcher_foreground),
                 )
                 OfficialAvatarLoader.bind(buddyHolder.officialAvatar, buddy.uin, buddy.uid)
                 buddyHolder.itemCard.setOnClickListener { onClick(buddy) }
@@ -128,11 +127,11 @@ class ContactsAdapter(
     private fun createHeaderHolder(parent: ViewGroup): HeaderHolder {
         lateinit var title: MaterialTextView
         val hikage = Hikagable(parent.context) {
-            HLinearLayout(
+            LinearLayout(
                 lparams = LayoutParams(widthMatchParent = true),
                 init = { orientation = LinearLayout.VERTICAL },
             ) {
-                title = HMaterialTextView(
+                title = MaterialTextView(
                     lparams = LayoutParams(widthMatchParent = true),
                     init = {
                         TextViewCompat.setTextAppearance(
@@ -183,14 +182,14 @@ class ContactsAdapter(
                         )
                         isClickable = true
                         isFocusable = true
-                        setSwipeEnabled(false)
+                        isSwipeEnabled = false
                     },
                 ) {
-                    HLinearLayout(
+                    LinearLayout(
                         lparams = LayoutParams(matchParent = true),
                         init = { orientation = LinearLayout.VERTICAL },
                     ) {
-                        HLinearLayout(
+                        LinearLayout(
                             lparams = LayoutParams(widthMatchParent = true),
                             init = {
                                 orientation = LinearLayout.HORIZONTAL
@@ -198,7 +197,7 @@ class ContactsAdapter(
                                 setPadding(dp(parent, 12), dp(parent, 10), dp(parent, 12), dp(parent, 10))
                             },
                         ) {
-                            avatar = HShapeableImageView(
+                            avatar = ShapeableImageView(
                                 lparams = LayoutParams(width = dp(parent, 44), height = dp(parent, 44)),
                                 init = {
                                     setImageResource(R.drawable.ic_launcher_foreground)
@@ -206,7 +205,7 @@ class ContactsAdapter(
                                     scaleType = ImageView.ScaleType.CENTER_INSIDE
                                 },
                             )
-                            HLinearLayout(
+                            LinearLayout(
                                 lparams = LayoutParams(
                                     width = 0,
                                     height = ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -216,7 +215,7 @@ class ContactsAdapter(
                                 },
                                 init = { orientation = LinearLayout.VERTICAL },
                             ) {
-                                title = HMaterialTextView(
+                                title = MaterialTextView(
                                     lparams = LayoutParams(widthMatchParent = true),
                                     init = {
                                         TextViewCompat.setTextAppearance(
@@ -227,7 +226,7 @@ class ContactsAdapter(
                                         ellipsize = TextUtils.TruncateAt.END
                                     },
                                 )
-                                subtitle = HMaterialTextView(
+                                subtitle = MaterialTextView(
                                     lparams = LayoutParams(widthMatchParent = true) {
                                         topMargin = dp(parent, 2)
                                     },
@@ -242,20 +241,18 @@ class ContactsAdapter(
                                 )
                             }
                         }
-                        divider = HMaterialDivider(
+                        divider = MaterialDivider(
                             lparams = LayoutParams(
                                 widthMatchParent = true,
                                 height = dp(parent, 2),
                             ),
                             init = {
-                                setDividerThickness(dp(parent, 2))
-                                setDividerInsetStart(0)
-                                setDividerInsetEnd(0)
-                                setDividerColor(
-                                    MaterialColors.getColor(
-                                        this,
-                                        com.google.android.material.R.attr.colorSurfaceContainer,
-                                    ),
+                                dividerThickness = dp(parent, 2)
+                                dividerInsetStart = 0
+                                dividerInsetEnd = 0
+                                dividerColor = MaterialColors.getColor(
+                                    this,
+                                    com.google.android.material.R.attr.colorSurfaceContainer,
                                 )
                             },
                         )

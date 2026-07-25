@@ -13,7 +13,6 @@ import mqq.app.AppRuntime;
 
 /**
  * Project-owned equivalent of KernelSetterImpl.Companion.b().
- *
  * Keep this separate from the official injector: the values are obtained from
  * the runtime/device APIs directly, but the serialized field values follow the
  * Watch 9.0.7 native contract.

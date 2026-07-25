@@ -1,6 +1,7 @@
 package rj.qmme.ui
 
 import android.content.Context
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -8,11 +9,9 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import androidx.core.content.ContextCompat
 import androidx.core.widget.TextViewCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -21,27 +20,27 @@ import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.color.MaterialColors
-import com.google.android.material.divider.MaterialDivider
 import com.google.android.material.imageview.ShapeableImageView
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.textview.MaterialTextView
-import com.highcapable.hikage.annotation.Hikagable as HikagableAnnotation
+import com.highcapable.betterandroid.ui.extension.component.base.getDrawableCompat
+import com.highcapable.betterandroid.ui.extension.component.launch
 import com.highcapable.hikage.core.Hikage
 import com.highcapable.hikage.core.base.Hikagable
 import com.highcapable.hikage.core.layout.LayoutParams
-import com.highcapable.hikage.widget.android.widget.FrameLayout as HFrameLayout
-import com.highcapable.hikage.widget.android.widget.LinearLayout as HLinearLayout
-import com.highcapable.hikage.widget.android.widget.ScrollView as HScrollView
-import com.highcapable.hikage.widget.androidx.recyclerview.widget.RecyclerView as HRecyclerView
-import com.highcapable.hikage.widget.androidx.swiperefreshlayout.widget.SwipeRefreshLayout as HSwipeRefreshLayout
-import com.highcapable.hikage.widget.com.google.android.material.bottomnavigation.BottomNavigationView as HBottomNavigationView
-import com.highcapable.hikage.widget.com.google.android.material.card.MaterialCardView as HMaterialCardView
-import com.highcapable.hikage.widget.com.google.android.material.chip.Chip as HChip
-import com.highcapable.hikage.widget.com.google.android.material.divider.MaterialDivider as HMaterialDivider
-import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView as HShapeableImageView
-import com.highcapable.hikage.widget.com.google.android.material.button.MaterialButton as HMaterialButton
-import com.highcapable.hikage.widget.com.google.android.material.progressindicator.CircularProgressIndicator as HCircularProgressIndicator
-import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView as HMaterialTextView
+import com.highcapable.hikage.widget.android.widget.FrameLayout
+import com.highcapable.hikage.widget.android.widget.LinearLayout
+import com.highcapable.hikage.widget.android.widget.ScrollView
+import com.highcapable.hikage.widget.androidx.recyclerview.widget.RecyclerView
+import com.highcapable.hikage.widget.androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.highcapable.hikage.widget.com.google.android.material.bottomnavigation.BottomNavigationView
+import com.highcapable.hikage.widget.com.google.android.material.button.MaterialButton
+import com.highcapable.hikage.widget.com.google.android.material.card.MaterialCardView
+import com.highcapable.hikage.widget.com.google.android.material.chip.Chip
+import com.highcapable.hikage.widget.com.google.android.material.divider.MaterialDivider
+import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView
+import com.highcapable.hikage.widget.com.google.android.material.progressindicator.CircularProgressIndicator
+import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView
 import com.tencent.qphone.base.remote.SimpleAccount
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
@@ -49,12 +48,13 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import rj.qmme.QmmeApp
-import rj.qmme.data.OnlineStatus
 import rj.qmme.R
+import rj.qmme.data.OnlineStatus
 import rj.qmme.kernel.KernelBridge
 import rj.qmme.runtime.RuntimeCoordinator
 import rj.qmme.viewmodel.ChatListViewModel
 import rj.qmme.viewmodel.ContactsViewModel
+import com.highcapable.hikage.annotation.Hikagable as HikagableAnnotation
 
 /**
  * The whole signed-in surface is one native Hikage tree.  It deliberately
@@ -108,7 +108,7 @@ class MainHikagable(
         chatRecyclerView.adapter = ConversationAdapter(chatViewModel, onOpenChat)
         contactsRecyclerView.adapter = ContactsAdapter(onOpenContactChat)
 
-        owner.lifecycleScope.launch {
+        owner.launch {
             owner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
                     chatViewModel.contacts.collectLatest { snapshot ->
@@ -177,9 +177,9 @@ class MainHikagable(
             imageView = avatarView,
             localPath = null,
             urls = AvatarSources.forSelf(account.uin),
-            fallback = ContextCompat.getDrawable(context, R.drawable.ic_account_circle),
+            fallback = context.getDrawableCompat(R.drawable.ic_account_circle),
         )
-        owner.lifecycleScope.launch {
+        owner.launch {
             try {
                 awaitCancellation()
             } finally {
@@ -189,13 +189,13 @@ class MainHikagable(
 
         // Keep service bootstrap off the main thread.  This is the same
         // persisted-account binding path used by the kernel/chat pipeline.
-        owner.lifecycleScope.launch(Dispatchers.IO) {
+        owner.launch(Dispatchers.IO) {
             val runtime = RuntimeCoordinator.currentRuntime() ?: QmmeApp.ensureRuntime()
             val kernelReady = KernelBridge.getBuddyService() != null &&
                     KernelBridge.getRecentContactService() != null
             if (!kernelReady) {
                 val bindResult = KernelBridge.bindLoggedInAccount(account.uin, account)
-                android.util.Log.i("QMME", "main: bind persisted account result=$bindResult")
+                Log.i("QMME", "main: bind persisted account result=$bindResult")
             }
             val readyRuntime = RuntimeCoordinator.currentRuntime() ?: runtime
             RuntimeCoordinator.observeLegacyMirror(
@@ -211,7 +211,7 @@ class MainHikagable(
                     imageView = avatarView,
                     localPath = selfAvatarPath,
                     urls = AvatarSources.forSelf(account.uin),
-                    fallback = ContextCompat.getDrawable(context, R.drawable.ic_account_circle),
+                    fallback = context.getDrawableCompat(R.drawable.ic_account_circle),
                 )
             }
             KernelBridge.getKernelService()?.getProfileService()?.let { profileService ->
@@ -225,7 +225,7 @@ class MainHikagable(
 
     override val hikage
         get() = cachedHikage ?: Hikagable {
-            HLinearLayout(
+            LinearLayout(
                 lparams = LayoutParams(matchParent = true),
                 init = {
                     orientation = LinearLayout.VERTICAL
@@ -240,7 +240,7 @@ class MainHikagable(
                 // This is part of the Hikage tree, not a post-build View patch.
                 // It fills the transparent status-bar/cutout region with the same
                 // container surface as the app bar.
-                HLinearLayout(
+                LinearLayout(
                     lparams = LayoutParams(widthMatchParent = true, height = 0),
                     init = {
                         setBackgroundColor(
@@ -252,7 +252,7 @@ class MainHikagable(
                         EdgeToEdgeInsets.applyTopInsetSpacer(this)
                     },
                 )
-                HLinearLayout(
+                LinearLayout(
                     lparams = LayoutParams(widthMatchParent = true),
                     init = {
                         orientation = LinearLayout.HORIZONTAL
@@ -270,7 +270,7 @@ class MainHikagable(
                         EdgeToEdgeInsets.applyHorizontalInsets(this)
                     },
                 ) {
-                    avatarView = HShapeableImageView(
+                    avatarView = ShapeableImageView(
                         lparams = LayoutParams(width = dp(40), height = dp(40)) {
                             leftMargin = dp(16)
                         },
@@ -281,21 +281,21 @@ class MainHikagable(
                             contentDescription = "我的头像"
                         },
                     )
-                    HLinearLayout(
+                    LinearLayout(
                         lparams = LayoutParams(
                             width = ViewGroup.LayoutParams.WRAP_CONTENT,
                             height = ViewGroup.LayoutParams.WRAP_CONTENT,
                         ) { leftMargin = dp(12) },
                         init = { orientation = LinearLayout.VERTICAL },
                     ) {
-                        toolbarTitle = HMaterialTextView(
+                        toolbarTitle = MaterialTextView(
                             lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
                             init = {
                                 text = "消息"
                                 TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_TitleLarge)
                             },
                         )
-                        toolbarSubtitle = HMaterialTextView(
+                        toolbarSubtitle = MaterialTextView(
                             lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
                             init = {
                                 text = onlineSubtitle()
@@ -305,7 +305,7 @@ class MainHikagable(
                     }
                 }
 
-                HFrameLayout(
+                FrameLayout(
                     lparams = LayoutParams(widthMatchParent = true, height = 0) { weight = 1f },
                     init = {
                         clipChildren = false
@@ -324,7 +324,7 @@ class MainHikagable(
                 // Use the official M3 Expressive BottomNavigationView directly.
                 // Theme.Material3Expressive supplies its container tone, elevation
                 // and active indicator; no extra CardView or custom surface.
-                navigation = HBottomNavigationView(
+                navigation = BottomNavigationView(
                     lparams = LayoutParams(widthMatchParent = true),
                     init = {
                         EdgeToEdgeInsets.applyHorizontalInsets(this)
@@ -353,7 +353,7 @@ class MainHikagable(
                 )
                 // Keep the navigation component at its native Material height;
                 // the companion Hikage spacer owns only the gesture-bar region.
-                HLinearLayout(
+                LinearLayout(
                     lparams = LayoutParams(widthMatchParent = true, height = 0),
                     init = {
                         setBackgroundColor(
@@ -369,7 +369,7 @@ class MainHikagable(
         }.also { cachedHikage = it }
 
     @HikagableAnnotation
-    private fun Hikage.Performer<FrameLayout.LayoutParams>.buildChatPage(): LinearLayout = HLinearLayout(
+    private fun Hikage.Performer<FrameLayout.LayoutParams>.buildChatPage(): LinearLayout = LinearLayout(
         lparams = LayoutParams(matchParent = true),
         init = {
             orientation = LinearLayout.VERTICAL
@@ -382,7 +382,7 @@ class MainHikagable(
             )
         },
     ) {
-        chatStatusCard = HMaterialCardView(
+        chatStatusCard = MaterialCardView(
             lparams = LayoutParams(widthMatchParent = true) {
                 topMargin = dp(12)
                 leftMargin = dp(12)
@@ -391,7 +391,7 @@ class MainHikagable(
             },
             init = { isClickable = false },
         ) {
-            HLinearLayout(
+            LinearLayout(
                 lparams = LayoutParams(matchParent = true),
                 init = {
                     orientation = LinearLayout.HORIZONTAL
@@ -399,7 +399,7 @@ class MainHikagable(
                     setPadding(dp(16), dp(12), dp(16), dp(12))
                 },
             ) {
-                chatStatus = HMaterialTextView(
+                chatStatus = MaterialTextView(
                     lparams = LayoutParams(widthMatchParent = true),
                     init = {
                         text = "正在连接 QQ 服务…"
@@ -408,13 +408,13 @@ class MainHikagable(
                 )
             }
         }
-        chatSwipeRefresh = HSwipeRefreshLayout(
+        chatSwipeRefresh = SwipeRefreshLayout(
             lparams = LayoutParams(widthMatchParent = true, height = 0) { weight = 1f },
             init = {
                 setOnRefreshListener { boundChatViewModel?.refreshContacts() }
             },
         ) {
-            chatRecyclerView = HRecyclerView(
+            chatRecyclerView = RecyclerView(
                 lparams = LayoutParams(matchParent = true),
                 init = {
                     layoutManager = LinearLayoutManager(context)
@@ -427,7 +427,7 @@ class MainHikagable(
     }
 
     @HikagableAnnotation
-    private fun Hikage.Performer<FrameLayout.LayoutParams>.buildContactsPage(): LinearLayout = HLinearLayout(
+    private fun Hikage.Performer<FrameLayout.LayoutParams>.buildContactsPage(): LinearLayout = LinearLayout(
         lparams = LayoutParams(matchParent = true),
         init = {
             orientation = LinearLayout.VERTICAL
@@ -440,7 +440,7 @@ class MainHikagable(
             )
         },
     ) {
-        contactsStatusCard = HMaterialCardView(
+        contactsStatusCard = MaterialCardView(
             lparams = LayoutParams(widthMatchParent = true) {
                 topMargin = dp(12)
                 leftMargin = dp(12)
@@ -449,7 +449,7 @@ class MainHikagable(
             },
             init = { isClickable = false },
         ) {
-            HLinearLayout(
+            LinearLayout(
                 lparams = LayoutParams(matchParent = true),
                 init = {
                     orientation = LinearLayout.HORIZONTAL
@@ -457,7 +457,7 @@ class MainHikagable(
                     setPadding(dp(16), dp(8), dp(8), dp(8))
                 },
             ) {
-                contactsProgress = HCircularProgressIndicator(
+                contactsProgress = CircularProgressIndicator(
                     lparams = LayoutParams(width = dp(22), height = dp(22)) {
                         rightMargin = dp(12)
                     },
@@ -466,7 +466,7 @@ class MainHikagable(
                         visibility = View.GONE
                     },
                 )
-                contactsStatus = HMaterialTextView(
+                contactsStatus = MaterialTextView(
                     lparams = LayoutParams(width = 0, height = ViewGroup.LayoutParams.WRAP_CONTENT) {
                         weight = 1f
                     },
@@ -475,7 +475,7 @@ class MainHikagable(
                         TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
                     },
                 )
-                contactsRefresh = HChip(
+                contactsRefresh = Chip(
                     lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
                     init = {
                         text = "刷新"
@@ -490,7 +490,7 @@ class MainHikagable(
                 )
             }
         }
-        contactsSwipeRefresh = HSwipeRefreshLayout(
+        contactsSwipeRefresh = SwipeRefreshLayout(
             lparams = LayoutParams(widthMatchParent = true, height = 0) { weight = 1f },
             init = {
                 setOnRefreshListener {
@@ -498,7 +498,7 @@ class MainHikagable(
                 }
             },
         ) {
-            contactsRecyclerView = HRecyclerView(
+            contactsRecyclerView = RecyclerView(
                 lparams = LayoutParams(matchParent = true),
                 init = {
                     layoutManager = LinearLayoutManager(context)
@@ -511,46 +511,46 @@ class MainHikagable(
     }
 
     @HikagableAnnotation
-    private fun Hikage.Performer<FrameLayout.LayoutParams>.buildMyPage(): ScrollView = HScrollView(
+    private fun Hikage.Performer<FrameLayout.LayoutParams>.buildMyPage(): ScrollView = ScrollView(
         lparams = LayoutParams(matchParent = true),
         init = {
             isFillViewport = true
             clipToPadding = false
         },
     ) {
-        HLinearLayout(
+        LinearLayout(
             lparams = LayoutParams(widthMatchParent = true),
             init = {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(16), dp(16), dp(16), dp(24))
             },
         ) {
-            HMaterialCardView(
+            MaterialCardView(
                 lparams = LayoutParams(widthMatchParent = true),
                 init = { isClickable = false },
             ) {
-                HLinearLayout(
+                LinearLayout(
                     lparams = LayoutParams(matchParent = true),
                     init = {
                         orientation = LinearLayout.VERTICAL
                         setPadding(dp(20), dp(20), dp(20), dp(16))
                     },
                 ) {
-                    HMaterialTextView(
+                    MaterialTextView(
                         lparams = LayoutParams(widthMatchParent = true),
                         init = {
                             text = "QQ 账号"
                             TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_LabelMedium)
                         },
                     )
-                    HMaterialTextView(
+                    MaterialTextView(
                         lparams = LayoutParams(widthMatchParent = true) { topMargin = dp(4) },
                         init = {
                             text = account.uin.toString()
                             TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_TitleLarge)
                         },
                     )
-                    HChip(
+                    Chip(
                         lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
                             topMargin = dp(12)
                         },
@@ -561,32 +561,32 @@ class MainHikagable(
                             TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_LabelMedium)
                         },
                     )
-                    HMaterialDivider(
+                    MaterialDivider(
                         lparams = LayoutParams(widthMatchParent = true) { topMargin = dp(12) },
                     )
-                    HMaterialTextView(
+                    MaterialTextView(
                         lparams = LayoutParams(widthMatchParent = true) { topMargin = dp(12) },
                         init = {
                             text = "登录状态会保存在本机，QQ 服务将在后台继续工作。"
                             TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
                         },
                     )
-                    HMaterialButton(
+                    MaterialButton(
                         lparams = LayoutParams(widthMatchParent = true) { topMargin = dp(16) },
                         init = {
                             text = "退出登录"
                             isAllCaps = false
-                            icon = context.getDrawable(R.drawable.ic_logout)
+                            icon = drawableResource(R.drawable.ic_logout)
                             setOnClickListener { onLogout() }
                         },
                     )
-                    HMaterialButton(
+                    MaterialButton(
                         lparams = LayoutParams(widthMatchParent = true) { topMargin = dp(8) },
                         init = {
                             text = "强制退出应用"
                             isAllCaps = false
-                            icon = context.getDrawable(R.drawable.ic_power)
-                            setStrokeWidth(dp(1))
+                            icon = drawableResource(R.drawable.ic_power)
+                            strokeWidth = dp(1)
                             setOnClickListener { onForceExit() }
                         },
                     )

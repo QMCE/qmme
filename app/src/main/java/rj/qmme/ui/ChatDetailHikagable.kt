@@ -3,27 +3,22 @@ package rj.qmme.ui
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputMethodManager
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.Toast
-import androidx.core.content.ContextCompat
 import androidx.core.widget.TextViewCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -35,25 +30,32 @@ import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.textview.MaterialTextView
-import com.highcapable.hikage.annotation.Hikagable as HikagableAnnotation
+import com.highcapable.betterandroid.system.extension.component.clipboardManager
+import com.highcapable.betterandroid.system.extension.component.copy
+import com.highcapable.betterandroid.ui.extension.component.base.getDrawableCompat
+import com.highcapable.betterandroid.ui.extension.component.launch
+import com.highcapable.betterandroid.ui.extension.view.textColor
+import com.highcapable.betterandroid.ui.extension.view.textToString
+import com.highcapable.betterandroid.ui.extension.view.toast
 import com.highcapable.hikage.core.Hikage
 import com.highcapable.hikage.core.base.Hikagable
 import com.highcapable.hikage.core.layout.LayoutParams
-import com.highcapable.hikage.widget.android.widget.EditText as HEditText
-import com.highcapable.hikage.widget.android.widget.FrameLayout as HFrameLayout
-import com.highcapable.hikage.widget.android.widget.LinearLayout as HLinearLayout
-import com.highcapable.hikage.widget.androidx.recyclerview.widget.RecyclerView as HRecyclerView
-import com.highcapable.hikage.widget.androidx.swiperefreshlayout.widget.SwipeRefreshLayout as HSwipeRefreshLayout
-import com.highcapable.hikage.widget.com.google.android.material.appbar.MaterialToolbar as HMaterialToolbar
-import com.highcapable.hikage.widget.com.google.android.material.button.MaterialButton as HMaterialButton
-import com.highcapable.hikage.widget.com.google.android.material.card.MaterialCardView as HMaterialCardView
-import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView as HShapeableImageView
-import com.highcapable.hikage.widget.com.google.android.material.progressindicator.CircularProgressIndicator as HCircularProgressIndicator
-import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView as HMaterialTextView
+import com.highcapable.hikage.widget.android.widget.EditText
+import com.highcapable.hikage.widget.android.widget.FrameLayout
+import com.highcapable.hikage.widget.android.widget.LinearLayout
+import com.highcapable.hikage.widget.androidx.recyclerview.widget.RecyclerView
+import com.highcapable.hikage.widget.androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.highcapable.hikage.widget.com.google.android.material.appbar.MaterialToolbar
+import com.highcapable.hikage.widget.com.google.android.material.button.MaterialButton
+import com.highcapable.hikage.widget.com.google.android.material.card.MaterialCardView
+import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView
+import com.highcapable.hikage.widget.com.google.android.material.progressindicator.CircularProgressIndicator
+import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import rj.qmme.R
 import rj.qmme.viewmodel.ChatDetailViewModel
+import com.highcapable.hikage.annotation.Hikagable as HikagableAnnotation
 
 /** Phone-first Material 3 Expressive chat screen, composed with Hikage Views. */
 class ChatDetailHikagable(
@@ -61,7 +63,7 @@ class ChatDetailHikagable(
     private val target: ChatDetailViewModel.ChatTarget,
     private val onBack: () -> Unit,
     private val onPickImage: () -> Unit,
-    private val onOpenImage: (ChatDetailViewModel.UiImage) -> Unit,
+    onOpenImage: (ChatDetailViewModel.UiImage) -> Unit,
 ) : HikageScreen {
     private lateinit var toolbar: MaterialToolbar
     private lateinit var statusCard: MaterialCardView
@@ -89,7 +91,7 @@ class ChatDetailHikagable(
 
     override val hikage
         get() = cachedHikage ?: Hikagable {
-            HLinearLayout(
+            LinearLayout(
                 lparams = LayoutParams(matchParent = true),
                 init = {
                     orientation = LinearLayout.VERTICAL
@@ -101,7 +103,7 @@ class ChatDetailHikagable(
                     )
                 },
             ) {
-                HLinearLayout(
+                LinearLayout(
                     lparams = LayoutParams(widthMatchParent = true, height = 0),
                     init = { EdgeToEdgeInsets.applyTopInsetSpacer(this) },
                 )
@@ -110,7 +112,7 @@ class ChatDetailHikagable(
                 buildMessageArea()
                 buildComposer()
                 buildAttachmentPanel()
-                HLinearLayout(
+                LinearLayout(
                     lparams = LayoutParams(widthMatchParent = true, height = 0),
                     init = { EdgeToEdgeInsets.applyBottomInsetSpacerWithIme(this) },
                 )
@@ -119,14 +121,14 @@ class ChatDetailHikagable(
 
     @HikagableAnnotation
     private fun Hikage.Performer<LinearLayout.LayoutParams>.buildToolbar(): MaterialToolbar {
-        toolbar = HMaterialToolbar(
+        toolbar = MaterialToolbar(
             lparams = LayoutParams(widthMatchParent = true),
             init = {
-                navigationIcon = ContextCompat.getDrawable(context, R.drawable.ic_arrow_back)
+                navigationIcon = drawableResource(R.drawable.ic_arrow_back)
                 setNavigationContentDescription("返回")
                 setNavigationOnClickListener { onBack() }
                 setContentInsetStartWithNavigation(0)
-                logo = ContextCompat.getDrawable(context, R.drawable.ic_account_circle)
+                logo = drawableResource(R.drawable.ic_account_circle)
                 title = target.title
                 subtitle = if (target.chatType == 2) "群聊" else "QQ 聊天"
                 setTitleTextAppearance(
@@ -145,7 +147,7 @@ class ChatDetailHikagable(
 
     @HikagableAnnotation
     private fun Hikage.Performer<LinearLayout.LayoutParams>.buildStatusCard(): MaterialCardView {
-        statusCard = HMaterialCardView(
+        statusCard = MaterialCardView(
             lparams = LayoutParams(widthMatchParent = true) {
                 topMargin = dp(12)
                 leftMargin = dp(12)
@@ -153,7 +155,7 @@ class ChatDetailHikagable(
                 bottomMargin = dp(4)
             },
         ) {
-            HLinearLayout(
+            LinearLayout(
                 lparams = LayoutParams(matchParent = true),
                 init = {
                     orientation = LinearLayout.HORIZONTAL
@@ -161,7 +163,7 @@ class ChatDetailHikagable(
                     setPadding(dp(16), dp(12), dp(16), dp(12))
                 },
             ) {
-                statusProgress = HCircularProgressIndicator(
+                statusProgress = CircularProgressIndicator(
                     lparams = LayoutParams(width = dp(20), height = dp(20)) {
                         rightMargin = dp(12)
                     },
@@ -170,7 +172,7 @@ class ChatDetailHikagable(
                         visibility = View.GONE
                     },
                 )
-                statusText = HMaterialTextView(
+                statusText = MaterialTextView(
                     lparams = LayoutParams(width = 0, height = ViewGroup.LayoutParams.WRAP_CONTENT) {
                         weight = 1f
                     },
@@ -188,13 +190,13 @@ class ChatDetailHikagable(
 
     @HikagableAnnotation
     private fun Hikage.Performer<LinearLayout.LayoutParams>.buildMessageArea(): FrameLayout =
-        HFrameLayout(
+        FrameLayout(
             lparams = LayoutParams(widthMatchParent = true, height = 0) { weight = 1f },
         ) {
-            swipeRefresh = HSwipeRefreshLayout(
+            swipeRefresh = SwipeRefreshLayout(
                 lparams = LayoutParams(matchParent = true),
             ) {
-                recyclerView = HRecyclerView(
+                recyclerView = RecyclerView(
                     lparams = LayoutParams(matchParent = true),
                     init = {
                         layoutManager = LinearLayoutManager(context).apply { stackFromEnd = true }
@@ -206,7 +208,7 @@ class ChatDetailHikagable(
                     },
                 )
             }
-            emptyView = HLinearLayout(
+            emptyView = LinearLayout(
                 lparams = LayoutParams(
                     width = ViewGroup.LayoutParams.WRAP_CONTENT,
                     height = ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -217,7 +219,7 @@ class ChatDetailHikagable(
                     visibility = View.GONE
                 },
             ) {
-                HShapeableImageView(
+                ShapeableImageView(
                     lparams = LayoutParams(width = dp(48), height = dp(48)),
                     init = {
                         setImageResource(R.drawable.ic_chat)
@@ -230,7 +232,7 @@ class ChatDetailHikagable(
                         )
                     },
                 )
-                HMaterialTextView(
+                MaterialTextView(
                     lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
                         topMargin = dp(8)
                     },
@@ -240,11 +242,9 @@ class ChatDetailHikagable(
                             this,
                             com.google.android.material.R.style.TextAppearance_Material3_BodyMedium,
                         )
-                        setTextColor(
-                            MaterialColors.getColor(
-                                this,
-                                com.google.android.material.R.attr.colorOnSurfaceVariant,
-                            ),
+                        textColor = MaterialColors.getColor(
+                            this,
+                            com.google.android.material.R.attr.colorOnSurfaceVariant,
                         )
                     },
                 )
@@ -253,7 +253,7 @@ class ChatDetailHikagable(
 
     @HikagableAnnotation
     private fun Hikage.Performer<LinearLayout.LayoutParams>.buildComposer(): MaterialCardView =
-        HMaterialCardView(
+        MaterialCardView(
             lparams = LayoutParams(widthMatchParent = true) {
                 leftMargin = dp(12)
                 rightMargin = dp(12)
@@ -273,7 +273,7 @@ class ChatDetailHikagable(
                 EdgeToEdgeInsets.applyHorizontalInsets(this)
             },
         ) {
-            HLinearLayout(
+            LinearLayout(
                 lparams = LayoutParams(widthMatchParent = true),
                 init = {
                     orientation = LinearLayout.HORIZONTAL
@@ -281,12 +281,12 @@ class ChatDetailHikagable(
                     setPadding(dp(6), dp(6), dp(6), dp(6))
                 },
             ) {
-                imageButton = HMaterialButton(
+                imageButton = MaterialButton(
                     lparams = LayoutParams(width = dp(48), height = dp(48)) {
                         gravity = Gravity.BOTTOM
                     },
                     init = {
-                        icon = ContextCompat.getDrawable(context, R.drawable.ic_add)
+                        icon = drawableResource(R.drawable.ic_add)
                         iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
                         iconPadding = 0
                         text = ""
@@ -305,15 +305,18 @@ class ChatDetailHikagable(
                         setOnClickListener { toggleAttachmentPanel() }
                     },
                 )
-                input = HEditText(
+                input = EditText(
                     lparams = LayoutParams(width = 0, height = ViewGroup.LayoutParams.WRAP_CONTENT) {
                         weight = 1f
                         gravity = Gravity.CENTER_VERTICAL
                     },
                     init = {
-                        hint = "发消息"
+                        hint = "发点什么呢"
                         background = null
-                        setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface))
+                        textColor = MaterialColors.getColor(
+                            this,
+                            com.google.android.material.R.attr.colorOnSurface
+                        )
                         setHintTextColor(
                             MaterialColors.getColor(
                                 this,
@@ -336,13 +339,13 @@ class ChatDetailHikagable(
                         setOnClickListener { hideAttachmentPanel() }
                     },
                 )
-                sendButton = HMaterialButton(
+                sendButton = MaterialButton(
                     lparams = LayoutParams(width = dp(48), height = dp(48)) {
                         leftMargin = dp(4)
                         gravity = Gravity.BOTTOM
                     },
                     init = {
-                        icon = ContextCompat.getDrawable(context, R.drawable.ic_send)
+                        icon = drawableResource(R.drawable.ic_send)
                         iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
                         iconPadding = 0
                         text = ""
@@ -360,7 +363,7 @@ class ChatDetailHikagable(
 
     @HikagableAnnotation
     private fun Hikage.Performer<LinearLayout.LayoutParams>.buildAttachmentPanel(): LinearLayout {
-        val panel = HLinearLayout(
+        val panel = LinearLayout(
             lparams = LayoutParams(widthMatchParent = true),
             init = {
                 orientation = LinearLayout.HORIZONTAL
@@ -375,7 +378,7 @@ class ChatDetailHikagable(
                 EdgeToEdgeInsets.applyHorizontalInsets(this)
             },
         ) {
-            HLinearLayout(
+            LinearLayout(
                 lparams = LayoutParams(
                     width = ViewGroup.LayoutParams.WRAP_CONTENT,
                     height = ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -385,12 +388,12 @@ class ChatDetailHikagable(
                     gravity = Gravity.CENTER_HORIZONTAL
                 },
             ) {
-                HMaterialButton(
+                MaterialButton(
                     lparams = LayoutParams(width = dp(56), height = dp(56)) {
                         gravity = Gravity.CENTER_HORIZONTAL
                     },
                     init = {
-                        icon = ContextCompat.getDrawable(context, R.drawable.ic_image)
+                    icon = drawableResource(R.drawable.ic_image)
                         iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
                         iconPadding = 0
                         text = ""
@@ -418,7 +421,7 @@ class ChatDetailHikagable(
                         }
                     },
                 )
-                HMaterialTextView(
+                MaterialTextView(
                     lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
                         topMargin = dp(6)
                     },
@@ -428,11 +431,9 @@ class ChatDetailHikagable(
                             this,
                             com.google.android.material.R.style.TextAppearance_Material3_LabelMedium,
                         )
-                        setTextColor(
-                            MaterialColors.getColor(
-                                this,
-                                com.google.android.material.R.attr.colorOnSurfaceVariant,
-                            ),
+                        textColor = MaterialColors.getColor(
+                            this,
+                            com.google.android.material.R.attr.colorOnSurfaceVariant,
                         )
                     },
                 )
@@ -511,18 +512,18 @@ class ChatDetailHikagable(
             toolbar = toolbar,
             localPath = target.avatarPath,
             urls = AvatarSources.forChatTarget(target),
-            fallback = ContextCompat.getDrawable(context, R.drawable.ic_account_circle),
+            fallback = context.getDrawableCompat(R.drawable.ic_account_circle),
         )
         statusCard.setOnClickListener { viewModel.retry() }
         statusCard.contentDescription = "聊天状态，点按重试"
         swipeRefresh.setOnRefreshListener { viewModel.loadOlder() }
-        owner.lifecycleScope.launch {
+        owner.launch {
             owner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
                     viewModel.messages.collectLatest { messages ->
                         val previous = adapter.currentList
                         val shouldFollowBottom = previous.isEmpty() ||
-                            previous.lastOrNull()?.stableId != messages.lastOrNull()?.stableId
+                                previous.lastOrNull()?.stableId != messages.lastOrNull()?.stableId
                         adapter.submitList(messages) {
                             if (shouldFollowBottom && messages.isNotEmpty()) {
                                 recyclerView.scrollToPosition(messages.lastIndex)
@@ -583,11 +584,9 @@ class ChatDetailHikagable(
             if (message.text.isNotBlank()) {
                 add(
                     Action("复制") {
-                        val clipboard = context.getSystemService(ClipboardManager::class.java)
-                        clipboard?.setPrimaryClip(
-                            ClipData.newPlainText("QQ 消息", message.text),
-                        )
-                        Toast.makeText(context, "已复制消息", Toast.LENGTH_SHORT).show()
+                        val clipboard = context.clipboardManager
+                        clipboard.copy(message.text, "QQ 消息")
+                        context.toast("已复制消息")
                     },
                 )
             }
@@ -632,7 +631,7 @@ class ChatDetailHikagable(
 
     private fun performSend() {
         val viewModel = boundViewModel ?: return
-        val value = input.text?.toString().orEmpty()
+        val value = input.textToString()
         if (viewModel.sendText(value)) input.text?.clear()
     }
 

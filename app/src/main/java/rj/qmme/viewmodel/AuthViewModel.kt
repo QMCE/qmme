@@ -1,11 +1,11 @@
 package rj.qmme.viewmodel
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.highcapable.betterandroid.ui.extension.graphics.decodeToBitmapOrNull
 import com.tencent.qphone.base.remote.SimpleAccount
 import com.tencent.qqnt.account.wtlogin.QrWtLoginExtObserver
 import com.tencent.qqnt.account.wtlogin.api.IWtLoginService
@@ -31,6 +31,7 @@ import rj.qmme.runtime.RuntimeCoordinator
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.time.Duration.Companion.milliseconds
 
 class AuthViewModel : ViewModel() {
 
@@ -139,7 +140,7 @@ class AuthViewModel : ViewModel() {
                 return@launch
             }
 
-            val fetchResult = withTimeoutOrNull(FETCH_TIMEOUT_MS) {
+            val fetchResult = withTimeoutOrNull(FETCH_TIMEOUT_MS.milliseconds) {
                 runCatching {
                     withContext(Dispatchers.IO) {
                         services.wtService.fetchCodeSigVerifyLogin(LOGIN_APP_ID, null)
@@ -188,7 +189,7 @@ class AuthViewModel : ViewModel() {
         }
 
         var resolved: LoginServices? = null
-        withTimeoutOrNull(SERVICE_INIT_TIMEOUT_MS) {
+        withTimeoutOrNull(SERVICE_INIT_TIMEOUT_MS.milliseconds) {
             while (resolved == null) {
                 val runtime = withContext(Dispatchers.IO) {
                     RuntimeCoordinator.currentRuntime()
@@ -212,7 +213,7 @@ class AuthViewModel : ViewModel() {
                 if (runtime != null && service != null && isRuntimeRunning(runtime)) {
                     resolved = LoginServices(runtime, service)
                 } else {
-                    delay(250L)
+                    delay(250L.milliseconds)
                 }
             }
         }
@@ -279,7 +280,7 @@ class AuthViewModel : ViewModel() {
     private fun armCallbackWatchdog(generation: Long, message: String) {
         callbackWatchdogJob?.cancel()
         callbackWatchdogJob = viewModelScope.launch {
-            delay(CALLBACK_TIMEOUT_MS)
+            delay(CALLBACK_TIMEOUT_MS.milliseconds)
             if (isCurrent(generation)) failRequest(generation, message)
         }
     }
@@ -287,7 +288,7 @@ class AuthViewModel : ViewModel() {
     private fun armTicketCallbackWatchdog(generation: Long) {
         callbackWatchdogJob?.cancel()
         callbackWatchdogJob = viewModelScope.launch {
-            delay(CALLBACK_TIMEOUT_MS)
+            delay(CALLBACK_TIMEOUT_MS.milliseconds)
             if (isCurrent(generation) && _loginUiState.value == LoginUiState.ExchangingTicket) {
                 scheduleTicketRetry(generation, "登录票据返回超时")
             }
@@ -355,7 +356,7 @@ class AuthViewModel : ViewModel() {
         _isBusy.value = true
         ticketRetryJob?.cancel()
         ticketRetryJob = viewModelScope.launch {
-            delay(TICKET_RETRY_DELAY_MS)
+            delay(TICKET_RETRY_DELAY_MS.milliseconds)
             if (isCurrent(generation)) requestTicket(generation)
         }
     }
@@ -377,7 +378,7 @@ class AuthViewModel : ViewModel() {
                     runCatching { service.queryCodeResult(null) }.getOrDefault(-1)
                 }
                 if (queryRet != 0) appendLog("query=$queryRet")
-                delay(queryTimeSec.coerceAtLeast(1L) * 1000L)
+                delay((queryTimeSec.coerceAtLeast(1L) * 1000L).milliseconds)
             }
         }
     }
@@ -399,7 +400,7 @@ class AuthViewModel : ViewModel() {
             ) {
                 viewModelScope.launch(Dispatchers.Default) {
                     val bitmap = if (ret == 0 && picBuf != null) {
-                        BitmapFactory.decodeByteArray(picBuf, 0, picBuf.size)
+                        picBuf.decodeToBitmapOrNull(0, picBuf.size)
                     } else {
                         null
                     }

@@ -65,7 +65,7 @@ object OnlineStatus {
             // metadata still calls it addProfileListener(), so a direct Kotlin
             // call compiles to the absent phone-build symbol and crashes on the
             // Watch runtime. Resolve the actual APK ABI without introducing a
-            // hand-written QQNT compatibility class.
+            // handwritten QQNT compatibility class.
             addWatchProfileListener(profileService, Listener)
             val native = (profileService as? ProfileService)?.service
             native?.startStatusPolling(true)
@@ -115,7 +115,7 @@ object OnlineStatus {
 
     private fun merge(map: HashMap<String, StatusInfo>) {
         for ((uid, info) in map) {
-            if (!uid.isNullOrEmpty() && info != null) cache[uid] = info
+            if (uid.isNotEmpty()) cache[uid] = info
         }
     }
 

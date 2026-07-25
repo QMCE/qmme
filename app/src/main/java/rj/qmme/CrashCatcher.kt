@@ -3,9 +3,12 @@ package rj.qmme
 import android.app.Application
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.Process
 import android.util.Log
+import androidx.core.content.edit
+import com.highcapable.betterandroid.system.extension.component.Intent
+import com.highcapable.betterandroid.system.extension.utils.AndroidVersion
+import rj.qmme.ui.CrashActivity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -82,7 +85,7 @@ object CrashCatcher {
         )
         persistReport(context, report)
 
-        val intent = Intent(context, rj.qmme.ui.CrashActivity::class.java).apply {
+        val intent = Intent<CrashActivity>(context).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             putExtra(KEY_ID, report.id)
             putExtra(KEY_PROCESS, report.process)
@@ -96,14 +99,14 @@ object CrashCatcher {
 
     private fun persistReport(context: Context, report: CrashReport) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_ID, report.id)
-            .putString(KEY_PROCESS, report.process)
-            .putString(KEY_THREAD, report.thread)
-            .putString(KEY_ERROR, report.error)
-            .putString(KEY_STACKTRACE, report.stacktrace)
-            .putLong("timestamp", System.currentTimeMillis())
-            .commit()
+            .edit(commit = true) {
+                putString(KEY_ID, report.id)
+                    .putString(KEY_PROCESS, report.process)
+                    .putString(KEY_THREAD, report.thread)
+                    .putString(KEY_ERROR, report.error)
+                    .putString(KEY_STACKTRACE, report.stacktrace)
+                    .putLong("timestamp", System.currentTimeMillis())
+            }
     }
 
     private fun createReportId(): String {
@@ -118,7 +121,7 @@ object CrashCatcher {
     }
 
     private fun currentProcessName(context: Context): String {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        return if (AndroidVersion.isAtLeast(AndroidVersion.P)) {
             Application.getProcessName()
         } else {
             context.packageName

@@ -4,6 +4,8 @@ import android.content.Context;
 import android.os.Build;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+
 import com.tencent.mobileqq.inject.IAppSettingInject;
 import com.tencent.qqnt.kernel.api.impl.KernelServiceImpl;
 import com.tencent.qqnt.kernel.dependences.IAccountModule;
@@ -11,10 +13,6 @@ import com.tencent.qqnt.kernel.dependences.IBusinessModule;
 import com.tencent.qqnt.kernel.dependences.IRelationModule;
 import com.tencent.qqnt.kernel.dependences.ISenderModule;
 import com.tencent.qqnt.kernel.nativeinterface.BatteryStatus;
-import com.tencent.qqnt.kernelgpro.nativeinterface.GProInitSessionConfig;
-import com.tencent.qqnt.kernelgpro.nativeinterface.IGProDependsAdapter;
-import com.tencent.qqnt.kernelgpro.nativeinterface.IKernelGProSessionListener;
-import com.tencent.qqnt.kernelgpro.nativeinterface.IQQGProWrapperSession;
 import com.tencent.qqnt.kernel.nativeinterface.DeviceInfo;
 import com.tencent.qqnt.kernel.nativeinterface.IQQNTWrapperSession;
 import com.tencent.qqnt.kernel.nativeinterface.IpType;
@@ -22,11 +20,10 @@ import com.tencent.qqnt.kernel.nativeinterface.OnLineBusinessInfo;
 import com.tencent.qqnt.kernel.nativeinterface.SendRequestParam;
 import com.tencent.qqnt.kernel.nativeinterface.ServerAddress;
 import com.tencent.qqnt.kernel.nativeinterface.SessionTicket;
-
-import mqq.manager.Manager;
-import mqq.manager.TicketManager;
-import oicq.wlogin_sdk.request.Ticket;
-import rj.qmme.diagnostics.OfflineDiagnostics;
+import com.tencent.qqnt.kernelgpro.nativeinterface.GProInitSessionConfig;
+import com.tencent.qqnt.kernelgpro.nativeinterface.IGProDependsAdapter;
+import com.tencent.qqnt.kernelgpro.nativeinterface.IKernelGProSessionListener;
+import com.tencent.qqnt.kernelgpro.nativeinterface.IQQGProWrapperSession;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -34,6 +31,10 @@ import java.util.HashMap;
 import java.util.List;
 
 import mqq.app.AppRuntime;
+import mqq.manager.Manager;
+import mqq.manager.TicketManager;
+import oicq.wlogin_sdk.request.Ticket;
+import rj.qmme.diagnostics.OfflineDiagnostics;
 
 /** Project-owned dependency slots for the Watch KernelServiceImpl. */
 final class ProjectKernelDependencies {
@@ -80,10 +81,13 @@ final class ProjectKernelDependencies {
         }
         @Override public String c() { return CLIENT_VERSION; }
         @Override public String d(Context ignored) {
+            /*
             int code = 1;
             try { code = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionCode; }
             catch (Throwable ignoredError) { }
             return CLIENT_VERSION + "." + code;
+            */
+            return CLIENT_BUILD;
         }
         @Override public String e() { return CLIENT_BUILD; }
         @Override public boolean f(Context ignored) { return false; }
@@ -122,7 +126,7 @@ final class ProjectKernelDependencies {
             this.runtime = runtime;
         }
 
-        @Override public void a(HashMap<String, String> sessionMap) {
+        @Override public void a(@NonNull HashMap<String, String> sessionMap) {
             Context context = runtime == null ? null : runtime.getApplicationContext();
             if (sessionMap == null || !sessionMap.containsKey("gpro")) {
                 Log.d(TAG, "ProjectBusinessModule: no gpro session advertised");
@@ -195,16 +199,19 @@ final class ProjectKernelDependencies {
     }
 
     private static final class ProjectAccountModule implements IAccountModule {
-        @Override public void a(AppRuntime app, IQQNTWrapperSession session) { }
-        @Override public OnLineBusinessInfo b(AppRuntime app) { return new OnLineBusinessInfo(0, 0, 0); }
-        @Override public List<String> c(String uin, AppRuntime app) {
+        @Override public void a(@NonNull AppRuntime app, @NonNull IQQNTWrapperSession session) { }
+        @NonNull
+        @Override public OnLineBusinessInfo b(@NonNull AppRuntime app) { return new OnLineBusinessInfo(0, 0, 0); }
+        @NonNull
+        @Override public List<String> c(@NonNull String uin, @NonNull AppRuntime app) {
             TicketSnapshot t = TicketSnapshot.read(app, uin);
             return List.of(t.a2, t.d2, t.d2Key);
         }
-        @Override public DeviceInfo d(AppRuntime app) {
+        @NonNull
+        @Override public DeviceInfo d(@NonNull AppRuntime app) {
             return ProjectKernelDeviceInfo.safeCreate(app.getApplicationContext(), app);
         }
-        @Override public boolean e(AppRuntime app) {
+        @Override public boolean e(@NonNull AppRuntime app) {
             try {
                 return app.getCurAccLoginType() != 5;
             } catch (Throwable error) {
@@ -240,7 +247,7 @@ final class ProjectKernelDependencies {
             }
             return out.toString();
         }
-        @Override public String a(String uin) {
+        @Override public String a(@NonNull String uin) {
             TicketManager ticketManager = ticketManager(runtime);
             if (ticketManager == null) {
                 Log.w(TAG, "ProjectSenderModule: TicketManager unavailable for getA2");
@@ -264,6 +271,7 @@ final class ProjectKernelDependencies {
             }
         }
         @Override public void c(long seq, String service, byte[] body, SendRequestParam param, String cmd, HashMap<String, byte[]> ext) { }
+        @NonNull
         @Override public BatteryStatus getBatteryStatus() { return new BatteryStatus(100, false); }
         @Override public ArrayList<ServerAddress> getIpDirectList(String host, IpType type) { return new ArrayList<>(); }
         @Override public SessionTicket getLoginTicket() {

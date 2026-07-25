@@ -1,7 +1,5 @@
 package rj.qmme.ui.hikage
 
-import android.view.ViewGroup
-import android.widget.FrameLayout
 import com.google.android.material.listitem.ListItemCardView
 import com.google.android.material.listitem.ListItemLayout
 import com.highcapable.hikage.annotation.Hikagable
@@ -61,6 +59,7 @@ inline fun <reified LP : ViewGroupLayoutParams> Hikage.Performer<LP>.ListItemCar
  * transparent, which is correct for standalone rows but makes a grouped list
  * lose its visual outer container.
  */
+@Suppress("FunctionName")
 @Hikagable
 inline fun <reified LP : ViewGroupLayoutParams> Hikage.Performer<LP>.SegmentedListItemCardView(
     lparams: LayoutParams? = null,

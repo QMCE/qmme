@@ -1,15 +1,17 @@
 package rj.qmme.kernel
 
 import android.util.Log
+import com.highcapable.betterandroid.system.extension.component.sendBroadcast
 import com.tencent.mobileqq.app.guard.GuardManager
 import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qphone.base.remote.SimpleAccount
-import com.tencent.qqnt.kernel.api.IKernelCreateListener
+import com.tencent.qqnt.kernel.api.IBuddyService
 import com.tencent.qqnt.kernel.api.IGroupService
+import com.tencent.qqnt.kernel.api.IKernelCreateListener
 import com.tencent.qqnt.kernel.api.IKernelService
-import com.tencent.qqnt.kernel.api.IServletAPI
+import com.tencent.qqnt.kernel.api.IMsgService
+import com.tencent.qqnt.kernel.api.IRecentContactService
 import com.tencent.qqnt.kernel.nativeinterface.IKernelMsgService
-import com.tencent.qqnt.kernel.nativeinterface.IKernelRecentContactService
 import com.tencent.qqnt.kernel.nativeinterface.IQQNTWrapperSession
 import com.tencent.qqnt.msg.api.IMsgPushForegroundApi
 import com.tencent.qqnt.watch.mainframe.api.IMsfConnHelper
@@ -21,8 +23,8 @@ import mqq.app.MobileQQ
 import mqq.app.NewIntent
 import mqq.manager.TicketManager
 import rj.qmme.QmmeApp
-import rj.qmme.runtime.RuntimeCoordinator
 import rj.qmme.diagnostics.OfflineDiagnostics
+import rj.qmme.runtime.RuntimeCoordinator
 import rj.qmme.runtime.RuntimeSession
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -39,22 +41,22 @@ object KernelBridge {
     @Volatile
     private var cachedKs: IKernelService? = null
     @Volatile
-    private var cachedMsgService: com.tencent.qqnt.kernel.api.IMsgService? = null
+    private var cachedMsgService: IMsgService? = null
     @Volatile
-    private var cachedRecentService: com.tencent.qqnt.kernel.api.IRecentContactService? = null
+    private var cachedRecentService: IRecentContactService? = null
     @Volatile
-    private var cachedBuddyService: com.tencent.qqnt.kernel.api.IBuddyService? = null
+    private var cachedBuddyService: IBuddyService? = null
     @Volatile
-    private var cachedGroupService: com.tencent.qqnt.kernel.api.IGroupService? = null
+    private var cachedGroupService: IGroupService? = null
     /** Runtime ownership of the service cache; null means the cache is cold. */
     @Volatile
     private var cachedRuntimeSession: RuntimeSession? = null
     @Volatile
-    private var directMsgWrapper: com.tencent.qqnt.kernel.api.IMsgService? = null
+    private var directMsgWrapper: IMsgService? = null
     @Volatile
-    private var directRecentWrapper: com.tencent.qqnt.kernel.api.IRecentContactService? = null
+    private var directRecentWrapper: IRecentContactService? = null
     @Volatile
-    private var officialMessageKernel: com.tencent.qqnt.kernel.api.IMsgService? = null
+    private var officialMessageKernel: IMsgService? = null
     @Volatile
     private var officialMessageService: com.tencent.qqnt.msg.api.IMsgService? = null
     private val officialMessageLock = Any()
@@ -197,7 +199,7 @@ object KernelBridge {
         "getKernelService",
     )
 
-    fun getMsgService(): com.tencent.qqnt.kernel.api.IMsgService? = cachedServiceFor(
+    fun getMsgService(): IMsgService? = cachedServiceFor(
         cachedMsgService,
         RuntimeCoordinator.currentRuntime(),
         "getMsgService",
@@ -214,7 +216,7 @@ object KernelBridge {
             .get(kernelService) as? IQQNTWrapperSession
         wrapperSession?.msgService
     }.getOrNull()
-    fun getRecentContactService(): com.tencent.qqnt.kernel.api.IRecentContactService? =
+    fun getRecentContactService(): IRecentContactService? =
         cachedServiceFor(
             cachedRecentService,
             RuntimeCoordinator.currentRuntime(),
@@ -243,13 +245,13 @@ object KernelBridge {
     /** True when a Java BaseService has a live native service behind it. */
     fun isNativeServiceReady(service: Any?): Boolean = hasNativeService(service)
 
-    fun getBuddyService(): com.tencent.qqnt.kernel.api.IBuddyService? = cachedServiceFor(
+    fun getBuddyService(): IBuddyService? = cachedServiceFor(
         cachedBuddyService,
         RuntimeCoordinator.currentRuntime(),
         "getBuddyService",
     )
 
-    fun getGroupService(): com.tencent.qqnt.kernel.api.IGroupService? = cachedServiceFor(
+    fun getGroupService(): IGroupService? = cachedServiceFor(
         cachedGroupService,
         RuntimeCoordinator.currentRuntime(),
         "getGroupService",
@@ -470,7 +472,7 @@ object KernelBridge {
             }
             val readyField = impl.getDeclaredField("isNTStartFinish").apply { isAccessible = true }
             val ready =
-                (readyField.get(ks) as? java.util.concurrent.atomic.AtomicBoolean)?.get() == true
+                (readyField.get(ks) as? AtomicBoolean)?.get() == true
             if (ready) {
                 Log.d(TAG, "KernelBridge: existing kernel already ready ks=$ks wrapper=$wrapper")
                 return@runCatching
@@ -481,7 +483,7 @@ object KernelBridge {
             )
             impl.getDeclaredMethod("initService").apply { isAccessible = true }.invoke(ks)
             val after =
-                (readyField.get(ks) as? java.util.concurrent.atomic.AtomicBoolean)?.get() == true
+                (readyField.get(ks) as? AtomicBoolean)?.get() == true
             Log.i(TAG, "KernelBridge: forced existing kernel init complete=$after wrapper=$wrapper")
         }.onFailure {
             Log.e(TAG, "KernelBridge: forced existing kernel init failed", it)
@@ -495,7 +497,7 @@ object KernelBridge {
                 impl.getDeclaredField("wrapperSession").apply { isAccessible = true }.get(ks)
             val ready =
                 (impl.getDeclaredField("isNTStartFinish").apply { isAccessible = true }.get(ks)
-                        as? java.util.concurrent.atomic.AtomicBoolean)?.get()
+                        as? AtomicBoolean)?.get()
             "wrapper=${wrapper != null}, isNTStartFinish=$ready"
         }.getOrElse { "stateError=${it.javaClass.simpleName}" }
     }
@@ -511,7 +513,7 @@ object KernelBridge {
     fun bindLoggedInAccount(uin: String, account: SimpleAccount): String {
         return runCatching {
             val app = MobileQQ.sMobileQQ ?: return "MobileQQ null"
-            runCatching { app.setLastLoginUin(uin) }
+            runCatching { app.lastLoginUin = uin }
             runCatching { app.setSortAccountList(arrayListOf(account)) }
 
             val initialRuntime = QmmeApp.ensureRuntime(app)
@@ -645,10 +647,9 @@ object KernelBridge {
 
         runCatching {
             val context = com.tencent.qphone.base.util.BaseApplication.getContext()
-            context.sendBroadcast(
-                android.content.Intent("com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE")
-                    .setPackage(context.packageName)
-            )
+            context.sendBroadcast(context.packageName) {
+                action = "com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE"
+            }
             Log.d(TAG, "login reinitialize: ON_KERNEL_INIT_COMPLETE sent")
         }.onFailure { Log.w(TAG, "login reinitialize: init broadcast failed", it) }
 
@@ -860,12 +861,12 @@ object KernelBridge {
             // Kotlin metadata in the Watch jar exposes descriptive names, while
             // the shipped JVM interface retains the obfuscated a/b symbols.
             // Implement both surfaces: native/JNI dispatches a/b directly.
-            override fun onKernelSessionCreated(callbackRuntime: AppRuntime) {
-                handleKernelSessionCreated(callbackRuntime)
+            override fun onKernelSessionCreated(app: AppRuntime) {
+                handleKernelSessionCreated(app)
             }
 
-            override fun onKernelInitComplete(callbackRuntime: AppRuntime) {
-                handleKernelInitComplete(callbackRuntime)
+            override fun onKernelInitComplete(app: AppRuntime) {
+                handleKernelInitComplete(app)
             }
 
             fun a(callbackRuntime: AppRuntime) {
@@ -909,10 +910,9 @@ object KernelBridge {
                 registerOfficialForegroundCallback(boundRuntime)
                 runCatching {
                     val context = com.tencent.qphone.base.util.BaseApplication.getContext()
-                    context.sendBroadcast(
-                        android.content.Intent("com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE")
-                            .setPackage(context.packageName),
-                    )
+                    context.sendBroadcast(context.packageName) {
+                        action = "com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE"
+                    }
                 }.onFailure { Log.w(TAG, "bind: init-complete broadcast failed", it) }
             }
         }
@@ -1060,10 +1060,9 @@ object KernelBridge {
         initializeOfficialMessageBridge(runtime)
         runCatching {
             val ctx = com.tencent.qphone.base.util.BaseApplication.getContext()
-            ctx.sendBroadcast(
-                android.content.Intent("com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE")
-                    .setPackage(ctx.packageName),
-            )
+            ctx.sendBroadcast(ctx.packageName) {
+                action = "com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE"
+            }
             Log.d(TAG, "initExistingKernel: ON_KERNEL_INIT_COMPLETE sent")
         }.onFailure { Log.w(TAG, "initExistingKernel: broadcast failed", it) }
         unblockPush()

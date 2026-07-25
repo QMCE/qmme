@@ -9,7 +9,6 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import androidx.core.content.ContextCompat
 import androidx.core.widget.TextViewCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
@@ -20,20 +19,22 @@ import com.google.android.material.listitem.ListItemViewHolder
 import com.google.android.material.shape.MaterialShapeDrawable
 import com.google.android.material.shape.ShapeAppearanceModel
 import com.google.android.material.textview.MaterialTextView
+import com.highcapable.betterandroid.ui.extension.component.base.getDrawableCompat
+import com.highcapable.betterandroid.ui.extension.view.textColor
 import com.highcapable.hikage.core.base.Hikagable
 import com.highcapable.hikage.core.layout.LayoutParams
-import com.highcapable.hikage.widget.android.widget.LinearLayout as HLinearLayout
-import com.highcapable.hikage.widget.com.google.android.material.divider.MaterialDivider as HMaterialDivider
-import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView as HShapeableImageView
-import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView as HMaterialTextView
+import com.highcapable.hikage.widget.android.widget.LinearLayout
+import com.highcapable.hikage.widget.com.google.android.material.divider.MaterialDivider
+import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView
+import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView
 import com.tencent.qqnt.avatar.WatchAvatarView
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import rj.qmme.R
-import rj.qmme.ui.hikage.SegmentedListItemCardView as HSegmentedListItemCardView
-import rj.qmme.ui.hikage.ListItemLayout as HListItemLayout
 import rj.qmme.viewmodel.ChatListViewModel
 import java.text.DateFormat
 import java.util.Date
+import rj.qmme.ui.hikage.ListItemLayout as HListItemLayout
+import rj.qmme.ui.hikage.SegmentedListItemCardView as HSegmentedListItemCardView
 
 /** Official Material 3 segmented ListItemLayout for the conversation feed. */
 class ConversationAdapter(
@@ -78,14 +79,14 @@ class ConversationAdapter(
                         )
                         isClickable = true
                         isFocusable = true
-                        setSwipeEnabled(false)
+                        isSwipeEnabled = false
                     },
                 ) {
-                    HLinearLayout(
+                    LinearLayout(
                         lparams = LayoutParams(matchParent = true),
                         init = { orientation = LinearLayout.VERTICAL },
                     ) {
-                        HLinearLayout(
+                        LinearLayout(
                             lparams = LayoutParams(widthMatchParent = true),
                             init = {
                                 orientation = LinearLayout.HORIZONTAL
@@ -95,7 +96,7 @@ class ConversationAdapter(
                                 setPadding(dp(parent, 12), dp(parent, 10), dp(parent, 12), dp(parent, 10))
                             },
                         ) {
-                            avatar = HShapeableImageView(
+                            avatar = ShapeableImageView(
                                 lparams = LayoutParams(width = dp(parent, 46), height = dp(parent, 46)),
                                 init = {
                                     setImageResource(R.drawable.ic_launcher_foreground)
@@ -104,7 +105,7 @@ class ConversationAdapter(
                                     contentDescription = "QQ 会话头像"
                                 },
                             )
-                            HLinearLayout(
+                            LinearLayout(
                                 lparams = LayoutParams(
                                     width = 0,
                                     height = ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -114,7 +115,7 @@ class ConversationAdapter(
                                 },
                                 init = { orientation = LinearLayout.VERTICAL },
                             ) {
-                                title = HMaterialTextView(
+                                title = MaterialTextView(
                                     lparams = LayoutParams(widthMatchParent = true),
                                     init = {
                                         TextViewCompat.setTextAppearance(
@@ -125,7 +126,7 @@ class ConversationAdapter(
                                         ellipsize = TextUtils.TruncateAt.END
                                     },
                                 )
-                                preview = HMaterialTextView(
+                                preview = MaterialTextView(
                                     lparams = LayoutParams(widthMatchParent = true) {
                                         topMargin = dp(parent, 2)
                                     },
@@ -139,14 +140,14 @@ class ConversationAdapter(
                                     },
                                 )
                             }
-                            HLinearLayout(
+                            LinearLayout(
                                 lparams = LayoutParams(height = ViewGroup.LayoutParams.WRAP_CONTENT),
                                 init = {
                                     orientation = LinearLayout.VERTICAL
                                     gravity = Gravity.END
                                 },
                             ) {
-                                time = HMaterialTextView(
+                                time = MaterialTextView(
                                     lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
                                         // LabelSmall's baseline is higher than BodyLarge;
                                         // this small offset lines it up with the title band.
@@ -160,7 +161,7 @@ class ConversationAdapter(
                                         gravity = Gravity.END
                                     },
                                 )
-                                unread = HMaterialTextView(
+                                unread = MaterialTextView(
                                     lparams = LayoutParams(
                                         width = ViewGroup.LayoutParams.WRAP_CONTENT,
                                         // M3 text badges are 16dp tall. Keep the exact size
@@ -179,11 +180,9 @@ class ConversationAdapter(
                                             com.google.android.material.R.style.TextAppearance_Material3_LabelSmall,
                                         )
                                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
-                                        setTextColor(
-                                            MaterialColors.getColor(
-                                                this,
-                                                com.google.android.material.R.attr.colorOnPrimaryContainer,
-                                            ),
+                                        textColor = MaterialColors.getColor(
+                                            this,
+                                            com.google.android.material.R.attr.colorOnPrimaryContainer,
                                         )
                                         gravity = Gravity.CENTER
                                         isSingleLine = true
@@ -198,7 +197,7 @@ class ConversationAdapter(
                                         ).apply {
                                             fillColor = ColorStateList.valueOf(
                                                 MaterialColors.getColor(
-                                                    this@HMaterialTextView,
+                                                    this@MaterialTextView,
                                                     com.google.android.material.R.attr.colorPrimaryContainer,
                                                 ),
                                             )
@@ -208,7 +207,7 @@ class ConversationAdapter(
                                 )
                             }
                         }
-                        divider = HMaterialDivider(
+                        divider = MaterialDivider(
                             lparams = LayoutParams(
                                 widthMatchParent = true,
                                 height = dp(parent, 2),
@@ -217,14 +216,12 @@ class ConversationAdapter(
                                 // Use a narrow surface-colored seam instead of a visible
                                 // gray rule: it keeps the grouped M3 card readable without
                                 // introducing a hard divider line.
-                                setDividerThickness(dp(parent, 2))
-                                setDividerInsetStart(0)
-                                setDividerInsetEnd(0)
-                                setDividerColor(
-                                    MaterialColors.getColor(
-                                        this,
-                                        com.google.android.material.R.attr.colorSurfaceContainer,
-                                    ),
+                                dividerThickness = dp(parent, 2)
+                                dividerInsetStart = 0
+                                dividerInsetEnd = 0
+                                dividerColor = MaterialColors.getColor(
+                                    this,
+                                    com.google.android.material.R.attr.colorSurfaceContainer,
                                 )
                             },
                         )
@@ -274,7 +271,7 @@ class ConversationAdapter(
             imageView = holder.avatar,
             localPath = contact.avatarPath,
             urls = AvatarSources.forRecent(contact),
-            fallback = ContextCompat.getDrawable(holder.itemView.context, R.drawable.ic_launcher_foreground),
+            fallback = holder.itemView.context.getDrawableCompat(R.drawable.ic_launcher_foreground),
         )
         OfficialAvatarLoader.bind(
             holder.officialAvatar,

@@ -3,11 +3,8 @@ package rj.qmme.ui
 import android.content.Context
 import android.view.Menu
 import android.view.MenuItem
-import android.view.ViewGroup
-import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import androidx.core.content.ContextCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -15,11 +12,10 @@ import com.google.android.material.imageview.ShapeableImageView
 import com.highcapable.hikage.core.Hikage
 import com.highcapable.hikage.core.base.Hikagable
 import com.highcapable.hikage.core.layout.LayoutParams
-import com.highcapable.hikage.widget.android.widget.FrameLayout as HFrameLayout
-import com.highcapable.hikage.widget.android.widget.LinearLayout as HLinearLayout
-import com.highcapable.hikage.widget.com.google.android.material.appbar.MaterialToolbar as HMaterialToolbar
-import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView as HShapeableImageView
-import rj.qmme.R
+import com.highcapable.hikage.widget.android.widget.FrameLayout
+import com.highcapable.hikage.widget.android.widget.LinearLayout
+import com.highcapable.hikage.widget.com.google.android.material.appbar.MaterialToolbar
+import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -27,6 +23,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import rj.qmme.R
 import rj.qmme.data.media.MediaStoreSaver
 import rj.qmme.viewmodel.ChatDetailViewModel
 
@@ -44,7 +41,7 @@ class ImagePreviewHikagable(
     private var saveJob: Job? = null
 
     override val hikage: Hikage.Delegate<*> = Hikagable {
-        HLinearLayout(
+        LinearLayout(
             lparams = LayoutParams(matchParent = true),
             init = {
                 orientation = LinearLayout.VERTICAL
@@ -56,15 +53,15 @@ class ImagePreviewHikagable(
                 )
             },
         ) {
-            HLinearLayout(
+            LinearLayout(
                 lparams = LayoutParams(widthMatchParent = true, height = 0),
                 init = { EdgeToEdgeInsets.applyTopInsetSpacer(this) },
             )
-            toolbar = HMaterialToolbar(
+            toolbar = MaterialToolbar(
                 lparams = LayoutParams(widthMatchParent = true),
                 init = {
                     title = "图片"
-                    navigationIcon = ContextCompat.getDrawable(context, R.drawable.ic_arrow_back)
+                    navigationIcon = drawableResource(R.drawable.ic_arrow_back)
                     setNavigationContentDescription("返回")
                     setNavigationOnClickListener { onBack() }
                     saveItem = menu.add(Menu.NONE, MENU_SAVE, Menu.NONE, "保存")
@@ -81,14 +78,14 @@ class ImagePreviewHikagable(
                     EdgeToEdgeInsets.applyHorizontalInsets(this)
                 },
             )
-            HFrameLayout(
+            FrameLayout(
                 lparams = LayoutParams(widthMatchParent = true, height = 0) { weight = 1f },
                 init = {
                     setPadding(dp(12), dp(12), dp(12), dp(12))
                     EdgeToEdgeInsets.applyHorizontalInsets(this)
                 },
             ) {
-                imageView = HShapeableImageView(
+                imageView = ShapeableImageView(
                     lparams = LayoutParams(matchParent = true),
                     init = {
                         scaleType = ImageView.ScaleType.FIT_CENTER
@@ -103,7 +100,7 @@ class ImagePreviewHikagable(
                     },
                 )
             }
-            HLinearLayout(
+            LinearLayout(
                 lparams = LayoutParams(widthMatchParent = true, height = 0),
                 init = { EdgeToEdgeInsets.applyBottomInsetSpacer(this) },
             )

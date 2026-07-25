@@ -3,9 +3,10 @@ package rj.qmme.ui
 import android.view.View
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import rj.qmme.ui.EdgeToEdgeInsets.applyBottomInsetSpacer
 
 /**
- * Runtime inset hooks used directly from Hikage view [init] blocks.
+ * Runtime inset hooks used directly from Hikage view init blocks.
  *
  * The screens remain one Hikage tree; this only supplies the system-bar values
  * that cannot be known until Android attaches the native View hierarchy.

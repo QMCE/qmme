@@ -3,7 +3,6 @@ package rj.qmme.viewmodel
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.view.View
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import com.tencent.qqnt.kernel.api.IKernelService
@@ -30,8 +29,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import mqq.app.AppRuntime
 import rj.qmme.kernel.KernelBridge
 import rj.qmme.runtime.RuntimeCoordinator
-import java.util.LinkedHashMap
-import kotlin.Unit
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Native View/NT recent-contact pipeline.
@@ -117,7 +115,7 @@ class ChatListViewModel : ViewModel() {
         loading = true
         scope.launch {
             try {
-                var service = awaitRecentContactService(runtime)
+                val service = awaitRecentContactService(runtime)
                 if (!running) return@launch
                 if (service == null) {
                     publishStatus("会话服务未就绪，稍后重试")
@@ -168,7 +166,7 @@ class ChatListViewModel : ViewModel() {
                 // awaitRecentContactService() may poll during an NT cold start,
                 // and keeping the indicator attached to that 60 s recovery loop
                 // made a normal refresh appear permanently stuck.
-                val current = recentService ?: withTimeoutOrNull(REFRESH_SERVICE_LOOKUP_TIMEOUT_MS) {
+                val current = recentService ?: withTimeoutOrNull(REFRESH_SERVICE_LOOKUP_TIMEOUT_MS.milliseconds) {
                     awaitRecentContactService(runtime)
                 }
                 if (current != null) {
@@ -189,7 +187,7 @@ class ChatListViewModel : ViewModel() {
                 // snapshot callbacks or the background 60-second polling job.
                 val remaining = REFRESH_INDICATOR_MIN_MS -
                         (SystemClock.elapsedRealtime() - startedAt)
-                if (remaining > 0L) delay(remaining)
+                if (remaining > 0L) delay(remaining.milliseconds)
                 _isRefreshing.value = false
             }
         }
@@ -213,13 +211,13 @@ class ChatListViewModel : ViewModel() {
         // the curated compile jar; erasure keeps the contact model usable.
         return runCatching {
             val list = contact.javaClass.getMethod("getAbstractContent").invoke(contact) as? List<*>
-            list.orEmpty().asSequence().mapNotNull { element ->
+            list.orEmpty().firstNotNullOfOrNull { element ->
                 runCatching {
                     val content = element?.javaClass?.getMethod("getContent")?.invoke(element)
-                        as? String
+                            as? String
                     content?.takeIf { it.isNotBlank() }
                 }.getOrNull()
-            }.firstOrNull()
+            }
         }.getOrNull()
     }
 
@@ -257,7 +255,7 @@ class ChatListViewModel : ViewModel() {
                             "kernel=${kernelState(kernel)}",
                 )
             }
-            delay(250L)
+            delay(250L.milliseconds)
         }
         return null
     }
@@ -307,12 +305,7 @@ class ChatListViewModel : ViewModel() {
         runCatching {
             service.enterOrExitMsgList(
                 EnterOrExitMsgListInfo(7, 1),
-                object : IOperateCallback {
-                    override fun onResult(code: Int, errMsg: String?) {
-                        Log.d(TAG, "enterOrExitMsgList enter code=$code msg=$errMsg")
-                    }
-                },
-            )
+            ) { code, errMsg -> Log.d(TAG, "enterOrExitMsgList enter code=$code msg=$errMsg") }
         }.onFailure { Log.w(TAG, "enter message list failed", it) }
     }
 
@@ -424,7 +417,7 @@ class ChatListViewModel : ViewModel() {
                 // but retaining the callback gives us useful diagnostics.
                 fetchRecentContacts(service)
             }
-            delay(POLL_INTERVAL_MS)
+            delay(POLL_INTERVAL_MS.milliseconds)
         }
 
         if (running && _contacts.value.contacts.isEmpty()) {
@@ -467,8 +460,8 @@ class ChatListViewModel : ViewModel() {
         if (!KernelBridge.isNativeServiceReady(service)) return null
         return runCatching {
             val nativeService = service.javaClass.methods.firstOrNull {
-                it.name == "getService" && it.parameterTypes.isEmpty()
-            }?.let { getter -> getter.invoke(service) } ?: findNativeDelegateField(service)
+                        it.name == "getService" && it.parameterTypes.isEmpty()
+                    }?.invoke(service) ?: findNativeDelegateField(service)
                 ?: return@runCatching null
             val syncMethod = nativeService.javaClass.methods.firstOrNull {
                 it.name == "getRecentContactListSync" && it.parameterTypes.isEmpty()
@@ -503,7 +496,7 @@ class ChatListViewModel : ViewModel() {
             service = KernelBridge.getMsgService()
                 ?.takeIf { KernelBridge.isNativeServiceReady(it) }
             if (service != null) break
-            delay(250L)
+            delay(250L.milliseconds)
         }
         if (service == null) {
             Log.w(TAG, "recentSync: IMsgService unavailable after bootstrap wait")
@@ -511,11 +504,12 @@ class ChatListViewModel : ViewModel() {
         }
         msgService = service
         runCatching {
-            service.switchForeGround(object : IOperateCallback {
-                override fun onResult(code: Int, errMsg: String?) {
-                    Log.d(TAG, "switch foreground code=$code msg=$errMsg")
-                }
-            })
+            service.switchForeGround { code, errMsg ->
+                Log.d(
+                    TAG,
+                    "switch foreground code=$code msg=$errMsg"
+                )
+            }
         }.onFailure { Log.d(TAG, "switch foreground skipped", it) }
         runCatching { service.startMsgSync() }
             .onFailure { Log.w(TAG, "initial startMsgSync failed", it) }
@@ -523,7 +517,7 @@ class ChatListViewModel : ViewModel() {
         if (messageSyncJob?.isActive != true) {
             messageSyncJob = scope.launch {
                 while (running) {
-                    delay(120_000L)
+                    delay(120_000L.milliseconds)
                     if (!running) break
                     runCatching { service.startMsgSync() }
                         .onSuccess { Log.d(TAG, "periodic startMsgSync") }
@@ -650,7 +644,7 @@ class ChatListViewModel : ViewModel() {
     private fun scheduleRetry() {
         if (!running || retryJob?.isActive == true) return
         retryJob = scope.launch {
-            delay(RETRY_DELAY_MS)
+            delay(RETRY_DELAY_MS.milliseconds)
             retryJob = null
             if (running && _contacts.value.contacts.isEmpty()) loadContacts(runtime)
         }
@@ -724,10 +718,7 @@ class ChatListViewModel : ViewModel() {
             runCatching {
                 service.enterOrExitMsgList(
                     EnterOrExitMsgListInfo(7, 2),
-                    object : IOperateCallback {
-                        override fun onResult(code: Int, errMsg: String?) = Unit
-                    },
-                )
+                ) { code, errMsg -> Unit }
             }.onFailure { Log.w(TAG, "exit message list failed", it) }
         }
         recentV2Listener = null

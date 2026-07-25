@@ -2,12 +2,12 @@ package rj.qmme.ui.navigation
 
 import android.view.View
 import android.widget.FrameLayout
-import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import com.highcapable.betterandroid.ui.extension.component.OnBackPressedCallback
 
 /**
  * Native-View navigation stack for QMME's Hikage screens.
@@ -82,10 +82,8 @@ class ViewNavigator(
         activity.lifecycle.addObserver(this)
         activity.onBackPressedDispatcher.addCallback(
             activity,
-            object : OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() {
-                    if (!pop()) onRootBack()
-                }
+            OnBackPressedCallback {
+                if (!pop()) onRootBack()
             },
         )
     }

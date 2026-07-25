@@ -1,8 +1,5 @@
 package rj.qmme.kernel;
 
-import android.content.Context;
-import android.net.ConnectivityManager;
-import android.net.Network;
 import android.os.Bundle;
 import android.util.Log;
 
@@ -37,7 +34,6 @@ import rj.qmme.diagnostics.OfflineDiagnostics;
 
 /**
  * Project-owned transport adapter for the Watch kernel.
- *
  * The native engine does not talk to sockets directly.  It emits callbacks to
  * the Java layer, which must turn them into the normal AppRuntime/MSF servlet
  * flow and feed the reply back to the exact wrapper object that issued the
@@ -95,7 +91,7 @@ final class ProjectKernelTransport {
         request.putExtra("requestId", requestId);
         putStringTransInfo(request, transInfo);
         putTraceInfo(request, traceInfo);
-        putRequestOptions(request, param, true);
+        putRequestOptions(request, param);
 
         EngineReplyObserver observer = new EngineReplyObserver(engine, runtime, command);
         request.setObserver(observer);
@@ -319,10 +315,8 @@ final class ProjectKernelTransport {
 
     private static IQQNTWrapperSession resolveWrapperSession(AppRuntime runtime) {
         try {
-            Object service = runtime.getRuntimeService(IKernelService.class, "");
-            if (service instanceof IKernelService) {
-                return ((IKernelService) service).getWrapperSession();
-            }
+            IKernelService service = runtime.getRuntimeService(IKernelService.class, "");
+            return service.getWrapperSession();
         } catch (Throwable error) {
             Log.w(TAG, "KernelTransport: get wrapper session failed", error);
         }
@@ -353,7 +347,7 @@ final class ProjectKernelTransport {
         return param != null && (param.sendOptions & 1) != 0;
     }
 
-    private static void putRequestOptions(NewIntent request, SendRequestParam param, boolean engineRequest) {
+    private static void putRequestOptions(NewIntent request, SendRequestParam param) {
         if (param == null) return;
         if ((param.sendOptions & 2) != 0) {
             request.putExtra("extra_send_without_resend", true);
@@ -456,8 +450,7 @@ final class ProjectKernelTransport {
         int trpcFuncResult = bundle.getInt("trpc_func_result", 0);
         HashMap<String, byte[]> transInfo = new HashMap<>();
         Serializable serializable = bundle.getSerializable("trans_info");
-        if (serializable instanceof HashMap) {
-            HashMap<?, ?> source = (HashMap<?, ?>) serializable;
+        if (serializable instanceof HashMap<?, ?> source) {
             for (Map.Entry<?, ?> entry : source.entrySet()) {
                 if (entry.getKey() instanceof String && entry.getValue() instanceof byte[]) {
                     transInfo.put((String) entry.getKey(), (byte[]) entry.getValue());

@@ -4,16 +4,13 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.FrameLayout
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.highcapable.betterandroid.ui.extension.component.launch
 import com.tencent.qphone.base.remote.SimpleAccount
-import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.launch
 import mqq.app.Constants
 import rj.qmme.QmmeApp
 import rj.qmme.data.LoginPrefs
@@ -49,7 +46,7 @@ class MainActivity : AppCompatActivity() {
 
     /** Mirrors the official logout reason observer using the native lifecycle. */
     private fun observeOfficialLogout() {
-        lifecycleScope.launch {
+        launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 QmmeApp.logoutReason.collect { reason ->
                     if (reason == null) {

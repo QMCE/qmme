@@ -7,7 +7,6 @@ import com.tencent.qqnt.kernel.api.IBuddyService
 import com.tencent.qqnt.kernel.api.IKernelService
 import com.tencent.qqnt.kernel.nativeinterface.BuddyListCategory
 import com.tencent.qqnt.kernel.nativeinterface.BuddyListReqType
-import com.tencent.qqnt.kernel.nativeinterface.IBuddyListCallback
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import com.tencent.qqnt.kernel.nativeinterface.UserSimpleInfo
 import com.tencent.qqnt.watch.contact.api.IContactRuntimeService
@@ -26,7 +25,7 @@ import rj.qmme.runtime.RuntimeCoordinator
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Native contact data pipeline migrated from qmce-lite-x.
@@ -198,7 +197,7 @@ class ContactsViewModel : ViewModel() {
         refreshIndicatorJob?.cancel()
         _isRefreshing.value = true
         refreshIndicatorJob = viewModelScope.launch {
-            delay(REFRESH_INDICATOR_MAX_MS)
+            delay(REFRESH_INDICATOR_MAX_MS.milliseconds)
             if (generation == loadGeneration.get()) {
                 _isRefreshing.value = false
             }
@@ -219,7 +218,7 @@ class ContactsViewModel : ViewModel() {
         var buddy = KernelBridge.getBuddyService()
         var contact: IContactRuntimeService? = getContactRuntimeService(runtime)
         while (buddy == null && System.currentTimeMillis() < deadline) {
-            delay(250)
+            delay(250.milliseconds)
             val kernel = KernelBridge.getKernelService() ?: runCatching {
                 runtime?.getRuntimeService(IKernelService::class.java, "")
             }.getOrNull()
@@ -340,7 +339,7 @@ class ContactsViewModel : ViewModel() {
                 )
             }
             if (uins.size >= allUids.size) break
-            delay(500)
+            delay(500.milliseconds)
         }
         return current
     }
@@ -428,21 +427,14 @@ class ContactsViewModel : ViewModel() {
                 "",
                 forceRefresh,
                 BuddyListReqType.KNOMAL,
-                object : IBuddyListCallback {
-                    override fun onResult(
-                        code: Int,
-                        errMsg: String?,
-                        list: java.util.ArrayList<BuddyListCategory>?,
-                    ) {
-                        Log.d(TAG, "getBuddyListV2 code=$code msg=$errMsg count=${list?.size}")
-                        if (code == 0 && list != null) {
-                            complete(Result.success(list))
-                        } else {
-                            complete(Result.failure(IllegalStateException("$code: $errMsg")))
-                        }
-                    }
-                },
-            )
+            ) { code, errMsg, list ->
+                Log.d(TAG, "getBuddyListV2 code=$code msg=$errMsg count=${list?.size}")
+                if (code == 0 && list != null) {
+                    complete(Result.success(list))
+                } else {
+                    complete(Result.failure(IllegalStateException("$code: $errMsg")))
+                }
+            }
         }.onFailure { complete(Result.failure(it)) }
         continuation.invokeOnCancellation { completed.set(true) }
     }
@@ -453,7 +445,7 @@ class ContactsViewModel : ViewModel() {
         nickMap: Map<String, String>,
         remarkMap: Map<String, String>,
         uins: Map<String, Long>,
-        recentByUid: Map<String?, com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo> = emptyMap(),
+        recentByUid: Map<String?, RecentContactInfo> = emptyMap(),
     ): List<UiCategory> {
         return categories.mapNotNull { category ->
             val categoryId = category.categoryId
@@ -523,7 +515,7 @@ class ContactsViewModel : ViewModel() {
         synchronized(loadLock) {
             if (retryJob?.isActive == true) return
             retryJob = viewModelScope.launch(Dispatchers.IO) {
-                delay(RETRY_DELAY_MS)
+                delay(RETRY_DELAY_MS.milliseconds)
                 synchronized(loadLock) { retryJob = null }
                 if (!loaded && !_loading.value) {
                     Log.d(TAG, "retrying contacts reason=$reason")
