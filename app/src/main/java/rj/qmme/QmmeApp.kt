@@ -24,6 +24,7 @@ import com.tencent.mmkv.MMKV
 import com.tencent.mobileqq.qmmkv.MMKVHandlerImpl
 import com.tencent.mobileqq.qmmkv.QMMKV
 import com.tencent.qphone.base.remote.SimpleAccount
+import com.tencent.qphone.base.util.MSFInterfaceAdapter
 import com.tencent.qqnt.watch.app.WatchAppInterface
 import com.tencent.qqnt.watch.app.WatchApplicationDelegate
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -103,6 +104,10 @@ class QmmeApp : WatchApplicationDelegate() {
             Constants.LogoutReason.suspend
         )
         private val loginRestartScheduled = AtomicBoolean(false)
+
+        // QQ Watch 9.0.7 Beacon/QIMEI app key (com.tencent.mobileqq.statistics.Qqimei /
+        // QQBeaconReport). MSF and WtLogin resolve the QimeiSDK instance by this key.
+        private const val BEACON_APP_KEY = "0AND05WGZE38P5II"
 
         fun markLoginEstablished() {
             _logoutReason.value = null
@@ -494,6 +499,10 @@ class QmmeApp : WatchApplicationDelegate() {
         SignatureProbe.dump(this)
         // Kept idempotent for warm-starts and vendor process recreation.
         initializeQmmkv()
+        // QIMEI must be initialized in EVERY process: the main process feeds the
+        // NT AppSetting path, while the :MSF process attaches QIMEI per SSO packet
+        // and supplies QIMEI16 to WtLogin. Do it before any account binding.
+        initializeQimei()
         if (isMainProcess()) {
             // Keep MobileQQ's own cold-start lifecycle intact.  In particular, do not
             // replay LoginPrefs here: setSortAccountList()/login() during Application
@@ -506,6 +515,9 @@ class QmmeApp : WatchApplicationDelegate() {
             initializeOfficialImageRuntime()
             registerLogoutCallback()
             OfficialReportBridge.initialize(this)
+        }
+        if (isMsfProcess()) {
+            initializeSecuritySigning()
         }
     }
 
@@ -644,6 +656,102 @@ class QmmeApp : WatchApplicationDelegate() {
     }.onFailure { error ->
         Log.w("QMME", "getCustomGuid failed", error)
     }.getOrNull()
+
+    private val qimeiInitialized = AtomicBoolean(false)
+
+    @Volatile
+    private var cachedMsfAdapter: MSFInterfaceAdapter? = null
+
+    /**
+     * MSF (per-packet QIMEI) and WtLogin (QIMEI16) both resolve the QimeiSDK
+     * instance via getMSFInterfaceAdapter().getBeaconAppKey(). The stock watch
+     * adapter returns "", which points at an uninitialized SDK instance and
+     * yields an empty QIMEI (a strong risk-control signal). Bind it to the real
+     * Beacon app key so those consumers share the instance initializeQimei()
+     * initializes; delegate the WT-uin fallback dir to the official adapter.
+     */
+    override fun getMSFInterfaceAdapter(): MSFInterfaceAdapter {
+        cachedMsfAdapter?.let { return it }
+        val official = super.getMSFInterfaceAdapter()
+        val adapter = object : MSFInterfaceAdapter() {
+            override fun getBeaconAppKey(): String = BEACON_APP_KEY
+            override fun getWTUinStoreFileDirLastResort(): String =
+                official.getWTUinStoreFileDirLastResort()
+        }
+        cachedMsfAdapter = adapter
+        return adapter
+    }
+
+    /**
+     * Initialize the official QIMEI SDK (libqimei.so) under [BEACON_APP_KEY] so a
+     * real, stable device fingerprint is attached to SSO packets (ReserveFields
+     * .qimei) and handed to WtLogin (QIMEI16). Qqimei.b is internally one-shot;
+     * force=true bypasses the privacy gate so init runs regardless of the
+     * privacy-policy helper state. Safe to call in every process.
+     */
+    private fun initializeQimei() {
+        if (!qimeiInitialized.compareAndSet(false, true)) return
+        runCatching { System.loadLibrary("qimei") }
+            .onFailure { Log.d("QMME", "libqimei preload skipped: ${it.message}") }
+        runCatching {
+            com.tencent.mobileqq.statistics.Qqimei.b(true)
+            val qimei36 = com.tencent.mobileqq.statistics.Qqimei.a()
+            Log.d("QMME", "QIMEI init done qimei36Len=${qimei36?.length ?: 0}")
+        }.onFailure { Log.w("QMME", "QIMEI init failed", it) }
+    }
+
+    private fun isMsfProcess(): Boolean {
+        val name = if (AndroidVersion.isAtLeast(AndroidVersion.P)) {
+            processName
+        } else {
+            currentProcessNameByActivityThread
+                ?: runCatching { currentProcessNameByActivityManager }.getOrNull()
+        }
+        return name?.endsWith(":MSF") == true
+    }
+
+    /**
+     * P0-A: the official MsfCore signs whitelisted SSO commands automatically in
+     * the :MSF process (FEKit -> QQSecuritySign -> SSO ReserveFields.sec_info,
+     * field 24), lazily initialized on the first outgoing packet from
+     * MsfCore.sCore + o.k() (the real QIMEI36 that P0-B now supplies). We do NOT
+     * reimplement signing; we only make it deterministic and observable:
+     *  1) guard the security flag against a persisted 0 (default is 2 = enabled),
+     *  2) pre-load libfekit so soLoaded() is true before the first sign and any
+     *     ABI/companion load failure surfaces early instead of silently emitting
+     *     an empty signature,
+     *  3) emit a delayed diagnostic so the signing state can be confirmed on-device.
+     */
+    private fun initializeSecuritySigning() {
+        runCatching {
+            val sp = getSharedPreferences("sp_security_name", Context.MODE_PRIVATE)
+            if (sp.getInt("sp_security_flag_name", 2) == 0) {
+                sp.edit().putInt("sp_security_flag_name", 2).apply()
+                Log.w("QMME", "security: re-enabled sp_security_flag_name")
+            }
+        }.onFailure { Log.w("QMME", "security: flag ensure failed", it) }
+
+        runCatching {
+            com.tencent.mobileqq.fe.FEKit.getInstance().loadSoAsync()
+            Log.d("QMME", "security: FEKit SO preload requested")
+        }.onFailure { Log.w("QMME", "security: FEKit SO preload failed", it) }
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            runCatching {
+                val fekit = com.tencent.mobileqq.fe.FEKit.getInstance()
+                val whitelist = runCatching { fekit.cmdWhiteList?.size ?: -1 }.getOrDefault(-1)
+                Log.i(
+                    "QMME",
+                    "security: FEKit signing state mInit=${fekit.mInit} whitelistSize=$whitelist",
+                )
+                OfflineDiagnostics.record(
+                    this,
+                    "security_signing_state",
+                    "fekitInit=${fekit.mInit} whitelistSize=$whitelist",
+                )
+            }.onFailure { Log.w("QMME", "security: signing state probe failed", it) }
+        }, 25_000L)
+    }
 
     // QQ 代码构造的 intent ComponentName 用 com.tencent.qqlite，但实际装的是 rj.qmme，
     // Android 找不到组件抛 SecurityException。拦截并修正包名。

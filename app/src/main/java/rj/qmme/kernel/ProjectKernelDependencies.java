@@ -131,7 +131,13 @@ final class ProjectKernelDependencies {
 
         @Override
         public String getQimei36() {
-            return "needInjecQimei36";
+            try {
+                String qimei = com.tencent.mobileqq.statistics.Qqimei.a();
+                return qimei == null ? "" : qimei;
+            } catch (Throwable error) {
+                Log.w(TAG, "ProjectAppSetting: QIMEI36 unavailable", error);
+                return "";
+            }
         }
 
         @Override
