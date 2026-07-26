@@ -47,7 +47,9 @@ jobs:
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" --install "platforms;android-37" "build-tools;37.0.0" "platform-tools"
+          # Since SDK 36 the platform packages carry a minor version:
+          # "platforms;android-37.0" (a bare "android-37" does not exist).
+          "$SDKMANAGER" --install "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
 
       # Gradle build/configuration caches. The wrapper downloads its
       # distribution from the Tencent mirror pinned in
