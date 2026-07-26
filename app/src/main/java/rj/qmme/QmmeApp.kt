@@ -705,19 +705,29 @@ class QmmeApp : WatchApplicationDelegate() {
      * instance via getMSFInterfaceAdapter().getBeaconAppKey(). The stock watch
      * adapter returns "", which points at an uninitialized SDK instance and
      * yields an empty QIMEI (a strong risk-control signal). Bind it to the real
-     * Beacon app key so those consumers share the instance initializeQimei()
-     * initializes; delegate the WT-uin fallback dir to the official adapter.
+     * Beacon app key so those consumers share the instance initialized by
+     * initializeQimei(); delegate the WT-uin fallback dir to the official adapter.
      */
     override fun getMSFInterfaceAdapter(): MSFInterfaceAdapter {
-        cachedMsfAdapter?.let { return it }
+        val result = cachedMsfAdapter
+        if (result != null) return result
+        
+        // Create new adapter and atomically cache it
         val official = super.getMSFInterfaceAdapter()
-        val adapter = object : MSFInterfaceAdapter() {
+        val newAdapter = object : MSFInterfaceAdapter() {
             override fun getBeaconAppKey(): String = BEACON_APP_KEY
             override fun getWTUinStoreFileDirLastResort(): String =
                 official.getWTUinStoreFileDirLastResort()
         }
-        cachedMsfAdapter = adapter
-        return adapter
+        
+        // Double-check pattern with volatile read
+        val existing = cachedMsfAdapter
+        if (existing != null) {
+            return existing
+        }
+        
+        cachedMsfAdapter = newAdapter
+        return newAdapter
     }
 
     /**
