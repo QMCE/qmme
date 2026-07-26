@@ -1,6 +1,7 @@
 package rj.qmme.fix
 
 import android.util.Log
+import rj.qmme.data.reporting.OfficialReportBridge
 
 /**
  * P2-C: Telemetry bridge for native callback support.
@@ -16,6 +17,7 @@ object TelemetryBridge {
      * Get the OpenTelemetry trace plan instance.
      * Returns non-null implementation compatible with official API.
      */
+    @Suppress("UNCHECKED_CAST")
     fun getTracePlan(): Any {
         return ProjectOpenTelemetryTracePlan
     }
@@ -45,12 +47,13 @@ object TelemetryBridge {
      * OpenTelemetry implementation that bridges to native callbacks.
      * Uses Any type to avoid dependency on missing interfaces.
      */
+    @Suppress("unused")
     private object ProjectOpenTelemetryTracePlan {
         fun report(key: String?, value: Any?) {
             if (key == null || value == null) return
             
             // Forward to OfficialReportBridge for centralized reporting
-            runCatching {
+            runCatching { 
                 OfficialReportBridge.report(key, value.toString())
             }.onFailure { e ->
                 Log.w(TAG, "Failed to forward telemetry to OfficialReportBridge", e)
