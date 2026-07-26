@@ -1,14 +1,13 @@
 package rj.qmme.fix
 
 import android.util.Log
-import rj.qmme.data.reporting.OfficialReportBridge
 
 /**
  * P2-C: Telemetry bridge for native callback support.
  *
  * Official ProjectKernelBootstrap.java has OpentelemetryTracePlan as null,
  * causing NPE when native code tries to call onDataReport(). This bridge
- * provides a non-null implementation that forwards calls to OfficialReportBridge.
+ * provides a non-null implementation that logs telemetry locally.
  */
 object TelemetryBridge {
     private const val TAG = "QMME-Telemetry"
@@ -46,43 +45,40 @@ object TelemetryBridge {
     /**
      * OpenTelemetry implementation that bridges to native callbacks.
      * Uses Any type to avoid dependency on missing interfaces.
+     * Logs all telemetry locally for debugging purposes.
      */
     @Suppress("unused")
     private object ProjectOpenTelemetryTracePlan {
         fun report(key: String?, value: Any?) {
             if (key == null || value == null) return
             
-            // Forward to OfficialReportBridge for centralized reporting
-            runCatching { 
-                OfficialReportBridge.report(key, value.toString())
-            }.onFailure { e ->
-                Log.w(TAG, "Failed to forward telemetry to OfficialReportBridge", e)
-            }
-            
-            // Also log locally for debugging
-            if (key.startsWith("pow_")) {
-                Log.d(TAG, "PoW telemetry: $key=$value")
-            } else if (key.startsWith("heartbeat_")) {
-                Log.d(TAG, "Heartbeat telemetry: $key=$value")
-            } else {
-                Log.v(TAG, "Telemetry: $key=$value")
+            // Log locally for debugging
+            when {
+                key.startsWith("pow_") -> {
+                    Log.d(TAG, "PoW telemetry: $key=$value")
+                }
+                key.startsWith("heartbeat_") -> {
+                    Log.d(TAG, "Heartbeat telemetry: $key=$value")
+                }
+                key.startsWith("sec_") || key.startsWith("sign_") -> {
+                    Log.d(TAG, "Security telemetry: $key=$value")
+                }
+                else -> {
+                    Log.v(TAG, "Telemetry: $key=$value")
+                }
             }
         }
         
         fun flush() {
-            // Flush any pending reports
-            runCatching { OfficialReportBridge.flush() }
-            Log.d(TAG, "Telemetry flushed")
+            Log.d(TAG, "Telemetry flushed (local logging only)")
         }
         
         fun shutdown() {
-            // Cleanup resources
             flush()
             Log.d(TAG, "Telemetry shutdown")
         }
         
         fun enable(enabled: Boolean) {
-            // Enable/disable telemetry collection
             Log.d(TAG, "Telemetry ${if (enabled) "enabled" else "disabled"}")
         }
     }
