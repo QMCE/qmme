@@ -713,23 +713,21 @@ class QmmeApp : WatchApplicationDelegate() {
     private var cachedMsfAdapter: MSFInterfaceAdapter? = null
 
     /**
-     * MSF (per-packet QIMEI) and WtLogin (QIMEI16) both resolve the QimeiSDK
-     * instance via getMSFInterfaceAdapter().getBeaconAppKey(). The stock watch
-     * adapter returns "", which points at an uninitialized SDK instance and
-     * yields an empty QIMEI (a strong risk-control signal). Bind it to the real
-     * Beacon app key so those consumers share the instance initialized by
-     * initializeQimei(); delegate the WT-uin fallback dir to the official adapter.
+     * Match official WatchApplicationDelegate exactly: it returns an adapter that ONLY
+     * overrides getWTUinStoreFileDirLastResort(). The default getBeaconAppKey() returns
+     * "" (empty string), which is what the official code uses for QimeiSDK.getInstance("").
+     * This ensures MSF and WtLogin get the SAME QIMEI SDK instance key as the stock client.
      */
     override fun getMSFInterfaceAdapter(): MSFInterfaceAdapter {
         val result = cachedMsfAdapter
         if (result != null) return result
         
-        // Create new adapter and atomically cache it
+        // Create new adapter matching official implementation
         val official = super.getMSFInterfaceAdapter()
         val newAdapter = object : MSFInterfaceAdapter() {
-            override fun getBeaconAppKey(): String = BEACON_APP_KEY
             override fun getWTUinStoreFileDirLastResort(): String =
                 official.getWTUinStoreFileDirLastResort()
+            // Do NOT override getBeaconAppKey() - use default which returns ""
         }
         
         // Double-check pattern with volatile read
