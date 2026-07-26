@@ -733,16 +733,17 @@ class QmmeApp : WatchApplicationDelegate() {
     /**
      * Initialize the official QIMEI SDK (libqimei.so) under [BEACON_APP_KEY] so a
      * real, stable device fingerprint is attached to SSO packets (ReserveFields
-     * .qimei) and handed to WtLogin (QIMEI16). Qqimei.b is internally one-shot;
-     * force=true bypasses the privacy gate so init runs regardless of the
-     * privacy-policy helper state. Safe to call in every process.
+     * .qimei) and handed to WtLogin (QIMEI16). Note: Official uses false parameter
+     * to respect privacy gate (bypassed via BeaconSDKInitTask); using false to match
+     * official behavior. Safe to call in every process.
      */
     private fun initializeQimei() {
         if (!qimeiInitialized.compareAndSet(false, true)) return
         runCatching { System.loadLibrary("qimei") }
             .onFailure { Log.d("QMME", "libqimei preload skipped: ${it.message}") }
         runCatching {
-            com.tencent.mobileqq.statistics.Qqimei.b(true)
+            // Use false to match official MiscInitTask behavior
+            com.tencent.mobileqq.statistics.Qqimei.b(false)
             val qimei36 = com.tencent.mobileqq.statistics.Qqimei.a()
             Log.d("QMME", "QIMEI init done qimei36Len=${qimei36?.length ?: 0}")
         }.onFailure { Log.w("QMME", "QIMEI init failed", it) }
