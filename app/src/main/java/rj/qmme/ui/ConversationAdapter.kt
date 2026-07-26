@@ -1,5 +1,6 @@
 package rj.qmme.ui
 
+import android.annotation.SuppressLint
 import android.content.res.ColorStateList
 import android.text.TextUtils
 import android.util.TypedValue
@@ -10,6 +11,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.core.widget.TextViewCompat
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.divider.MaterialDivider
@@ -42,11 +44,117 @@ class ConversationAdapter(
     private val viewModel: ChatListViewModel,
     private val onClick: (RecentContactInfo) -> Unit,
 ) : RecyclerView.Adapter<ConversationAdapter.Holder>() {
-    private var items: List<RecentContactInfo> = emptyList()
+    /**
+     * Everything one row draws, resolved once per publish.  Keeping it out of
+     * [onBindViewHolder] lets an incoming snapshot be compared for real instead
+     * of being taken on faith, and keeps the reflective preview lookup off the
+     * scroll path.
+     */
+    private class Row(
+        val id: Long,
+        val contact: RecentContactInfo,
+        val title: String,
+        val preview: String,
+        val time: String,
+        val unread: Long,
+        val avatarPath: String,
+        val avatarUrls: List<String>,
+        val peerUin: Long,
+        val peerUid: String,
+    ) {
+        fun sameContentAs(other: Row): Boolean =
+            title == other.title &&
+                preview == other.preview &&
+                time == other.time &&
+                unread == other.unread &&
+                avatarPath == other.avatarPath &&
+                avatarUrls == other.avatarUrls
+    }
 
+    private var rows: List<Row> = emptyList()
+
+    init {
+        // Stable ids keep a conversation on the same ViewHolder across updates,
+        // so a re-published list cannot shuffle rows through each other's views.
+        setHasStableIds(true)
+    }
+
+    /**
+     * The recent-contact StateFlow re-emits on every publish, and returning
+     * from a chat re-subscribes the collector and replays the current value.
+     * A blanket notifyDataSetChanged() there rebinds every visible row, which
+     * re-resolved each row's segmented shape and reset each avatar — the rows
+     * then settled one by one, which is the twitching this diff removes.
+     */
+    @SuppressLint("NotifyDataSetChanged")
     fun submitList(next: List<RecentContactInfo>) {
-        items = next
-        notifyDataSetChanged()
+        val previous = rows
+        val updated = next.map(::rowOf)
+        if (isUnchanged(previous, updated)) return
+        rows = updated
+        if (previous.isEmpty() || updated.isEmpty()) {
+            notifyDataSetChanged()
+            return
+        }
+        DiffUtil.calculateDiff(RowDiff(previous, updated)).dispatchUpdatesTo(this)
+        // First/middle/last shape and the trailing divider are a function of the
+        // row's place in the whole list, and neither a move nor a shift caused by
+        // an insert rebinds the rows it displaces. Only the two ends can change
+        // shape, so re-resolving them when a different conversation lands there
+        // is enough — every row in between is POSITION_MIDDLE either way.
+        val endsChanged = previous.size != updated.size ||
+            previous.first().id != updated.first().id ||
+            previous.last().id != updated.last().id
+        if (endsChanged) {
+            notifyItemChanged(0)
+            notifyItemChanged(updated.lastIndex)
+        }
+    }
+
+    private fun isUnchanged(previous: List<Row>, updated: List<Row>): Boolean =
+        previous.size == updated.size &&
+            previous.indices.all { index ->
+                previous[index].id == updated[index].id &&
+                    previous[index].sameContentAs(updated[index])
+            }
+
+    private fun rowOf(contact: RecentContactInfo) = Row(
+        id = identityOf(contact),
+        contact = contact,
+        title = contact.remark.orEmpty().ifBlank {
+            contact.peerName.orEmpty().ifBlank {
+                contact.peerUin.takeIf { it != 0L }?.toString() ?: "QQ 会话"
+            }
+        },
+        preview = viewModel.previewFor(contact),
+        time = formatTime(contact.msgTime),
+        unread = contact.unreadCnt,
+        avatarPath = contact.avatarPath.orEmpty(),
+        avatarUrls = AvatarSources.forRecent(contact),
+        peerUin = contact.peerUin.takeIf { it > 0L } ?: 0L,
+        peerUid = contact.peerUid.orEmpty(),
+    )
+
+    /** Mirrors ChatListViewModel's cache key so both sides agree on identity. */
+    private fun identityOf(contact: RecentContactInfo): Long {
+        if (contact.contactId != 0L) return contact.contactId
+        return contact.peerUid?.hashCode()?.toLong()
+            ?: contact.id.orEmpty().hashCode().toLong()
+    }
+
+    private class RowDiff(
+        private val previous: List<Row>,
+        private val updated: List<Row>,
+    ) : DiffUtil.Callback() {
+        override fun getOldListSize(): Int = previous.size
+
+        override fun getNewListSize(): Int = updated.size
+
+        override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean =
+            previous[oldItemPosition].id == updated[newItemPosition].id
+
+        override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean =
+            previous[oldItemPosition].sameContentAs(updated[newItemPosition])
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
@@ -256,38 +364,30 @@ class ConversationAdapter(
         return Holder(root, itemCard, avatar, title, preview, time, unread, divider, officialAvatar)
     }
 
+    override fun getItemId(position: Int): Long = rows[position].id
+
     override fun onBindViewHolder(holder: Holder, position: Int) {
-        val contact = items[position]
+        val row = rows[position]
         // All conversations are one segmented group, so the official holder
         // supplies first/middle/last shape states using the full item count.
-        holder.bind(position, items.size)
-        val title = contact.remark.orEmpty().ifBlank {
-            contact.peerName.orEmpty().ifBlank {
-                contact.peerUin.takeIf { it != 0L }?.toString() ?: "QQ 会话"
-            }
-        }
-        holder.title.text = title
-        holder.preview.text = viewModel.previewFor(contact)
-        holder.time.text = formatTime(contact.msgTime)
-        val unreadCount = contact.unreadCnt
-        holder.unread.text = if (unreadCount > 0L) formatUnreadCount(unreadCount) else ""
-        holder.unread.contentDescription = unreadCount.takeIf { it > 0L }
+        holder.bind(position, rows.size)
+        holder.title.text = row.title
+        holder.preview.text = row.preview
+        holder.time.text = row.time
+        holder.unread.text = if (row.unread > 0L) formatUnreadCount(row.unread) else ""
+        holder.unread.contentDescription = row.unread.takeIf { it > 0L }
             ?.let { "$it 条未读消息" }
-        holder.unread.visibility = if (unreadCount > 0L) View.VISIBLE else View.GONE
-        holder.divider.visibility = if (position < items.lastIndex) View.VISIBLE else View.GONE
+        holder.unread.visibility = if (row.unread > 0L) View.VISIBLE else View.GONE
+        holder.divider.visibility = if (position < rows.lastIndex) View.VISIBLE else View.GONE
         holder.avatar.scaleType = ImageView.ScaleType.CENTER_CROP
         AvatarLoader.bind(
             imageView = holder.avatar,
-            localPath = contact.avatarPath,
-            urls = AvatarSources.forRecent(contact),
+            localPath = row.avatarPath,
+            urls = row.avatarUrls,
             fallback = holder.itemView.context.getDrawableCompat(R.drawable.ic_launcher_foreground),
         )
-        OfficialAvatarLoader.bind(
-            holder.officialAvatar,
-            contact.peerUin.takeIf { it > 0L }.orZero(),
-            contact.peerUid.orEmpty(),
-        )
-        holder.itemCard.setOnClickListener { onClick(contact) }
+        OfficialAvatarLoader.bind(holder.officialAvatar, row.peerUin, row.peerUid)
+        holder.itemCard.setOnClickListener { onClick(row.contact) }
     }
 
     override fun onViewRecycled(holder: Holder) {
@@ -296,7 +396,7 @@ class ConversationAdapter(
         super.onViewRecycled(holder)
     }
 
-    override fun getItemCount(): Int = items.size
+    override fun getItemCount(): Int = rows.size
 
     class Holder(
         itemView: View,
@@ -315,8 +415,6 @@ class ConversationAdapter(
 
     private fun formatUnreadCount(count: Long): String =
         if (count > MAX_COMPACT_UNREAD_COUNT) "$MAX_COMPACT_UNREAD_COUNT+" else count.toString()
-
-    private fun Long?.orZero(): Long = this ?: 0L
 
     /**
      * IM-convention timestamps: today -> clock time, yesterday -> "昨天",

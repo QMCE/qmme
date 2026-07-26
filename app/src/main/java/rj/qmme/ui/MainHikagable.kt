@@ -14,6 +14,7 @@ import androidx.core.widget.TextViewCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -136,7 +137,7 @@ class MainHikagable(
                 }
                 launch {
                     chatViewModel.isStatusVisible.collectLatest { visible ->
-                        chatStatusCard.visibility = if (visible) View.VISIBLE else View.GONE
+                        Motion.fadeVisibility(chatStatusCard, visible)
                     }
                 }
                 launch {
@@ -160,10 +161,10 @@ class MainHikagable(
                 }
                 launch {
                     contactsViewModel.loading.collectLatest { loading ->
-                        contactsProgress.visibility = if (loading) View.VISIBLE else View.GONE
+                        Motion.fadeVisibility(contactsProgress, loading)
                         contactsRefresh.isEnabled = !loading
                         if (contactsViewModel.categories.value.isEmpty()) {
-                            contactsStatusCard.visibility = View.VISIBLE
+                            Motion.fadeVisibility(contactsStatusCard, visible = true)
                         }
                     }
                 }
@@ -306,6 +307,40 @@ class MainHikagable(
                                 subtitle = onlineSubtitle()
                                 setExpandedTitleTextAppearance(
                                     com.google.android.material.R.style.TextAppearance_Material3_HeadlineMedium_Emphasized,
+                                )
+                                // setExpandedTitleTextAppearance() re-reads the
+                                // appearance's own android:textColor, which every
+                                // TextAppearance.Material3.* inherits from
+                                // AppCompat as ?android:textColorPrimary. That
+                                // silently replaces the app bar's expandedTitleTextColor
+                                // (colorOnSurface) with whatever the platform —
+                                // or an OEM overlay — has textColorPrimary set to,
+                                // which is why only the expanded title washed out
+                                // while the collapsed one stayed correct. Re-pin
+                                // the M3 tokens after the appearance.
+                                setExpandedTitleColor(
+                                    MaterialColors.getColor(
+                                        this,
+                                        com.google.android.material.R.attr.colorOnSurface,
+                                    ),
+                                )
+                                setCollapsedTitleTextColor(
+                                    MaterialColors.getColor(
+                                        this,
+                                        com.google.android.material.R.attr.colorOnSurface,
+                                    ),
+                                )
+                                setExpandedSubtitleColor(
+                                    MaterialColors.getColor(
+                                        this,
+                                        com.google.android.material.R.attr.colorOnSurfaceVariant,
+                                    ),
+                                )
+                                setCollapsedSubtitleTextColor(
+                                    MaterialColors.getColor(
+                                        this,
+                                        com.google.android.material.R.attr.colorOnSurfaceVariant,
+                                    ),
                                 )
                             },
                         ) {
@@ -478,6 +513,11 @@ class MainHikagable(
                         overScrollMode = View.OVER_SCROLL_NEVER
                         clipToPadding = false
                         setPadding(dp(4), dp(4), dp(4), dp(10))
+                        // Rows that only re-resolve their segmented shape must
+                        // swap in place; a cross-fade there reads as a flicker.
+                        itemAnimator = DefaultItemAnimator().apply {
+                            supportsChangeAnimations = false
+                        }
                     },
                 )
             }
@@ -579,6 +619,9 @@ class MainHikagable(
                         overScrollMode = View.OVER_SCROLL_NEVER
                         clipToPadding = false
                         setPadding(dp(4), dp(4), dp(4), dp(10))
+                        itemAnimator = DefaultItemAnimator().apply {
+                            supportsChangeAnimations = false
+                        }
                     },
                 )
             }
@@ -736,7 +779,7 @@ class MainHikagable(
     private fun renderContactsState(categories: List<ContactsViewModel.UiCategory>) {
         if (categories.isNotEmpty()) {
             contactsStatus.text = "${categories.sumOf { it.buddies.size }} 位联系人"
-            contactsStatusCard.visibility = View.VISIBLE
+            Motion.fadeVisibility(contactsStatusCard, visible = true)
         }
     }
 

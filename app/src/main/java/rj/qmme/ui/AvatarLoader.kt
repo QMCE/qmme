@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.LayerDrawable
 import android.net.Uri
 import android.util.Log
 import android.util.LruCache
@@ -65,6 +66,14 @@ internal object AvatarLoader {
     }
     private val jobs = WeakHashMap<ImageView, Job>()
     private val requestIds = WeakHashMap<ImageView, Long>()
+
+    /**
+     * The request whose bitmap is currently painted on each view.  A recycled
+     * row that gets re-bound to the same contact must keep showing it instead
+     * of being reset to the placeholder and re-loaded — that reset is what made
+     * the conversation list twitch every time the screen re-subscribed.
+     */
+    private val boundKeys = WeakHashMap<ImageView, String>()
     private val navigationJobs = WeakHashMap<MaterialToolbar, Job>()
     private val navigationRequestIds = WeakHashMap<MaterialToolbar, Long>()
     private val logoJobs = WeakHashMap<MaterialToolbar, Job>()
@@ -95,6 +104,11 @@ internal object AvatarLoader {
      * Reset the recycled row immediately, then load local avatar and remote
      * fallback URLs off the main thread.  Every completion checks a per-view
      * request id so a fast scroll cannot attach another contact's avatar.
+     *
+     * Two short-circuits keep a re-bind of an unchanged row visually still: the
+     * request the view already shows is left alone, and a request whose bitmap
+     * is still in the memory cache is painted in the same frame instead of
+     * flashing the placeholder for one dispatch hop.
      */
     fun bind(
         imageView: ImageView,
@@ -105,20 +119,27 @@ internal object AvatarLoader {
     ) {
         if (circular) makeCircular(imageView) else makeRectangular(imageView)
         val appContext = imageView.context.applicationContext
+        val normalizedUrls = normalizeUrls(urls)
+        val key = requestKey(localPath, normalizedUrls)
+
+        val alreadyPainted = synchronized(this) { boundKeys[imageView] == key }
+        if (alreadyPainted && imageView.drawable != null) return
+
         val requestId: Long
         synchronized(this) {
             jobs.remove(imageView)?.cancel()
             requestId = ++nextRequestId
             requestIds[imageView] = requestId
+            boundKeys.remove(imageView)
+        }
+
+        peekMemory(localPath, normalizedUrls)?.let { cached ->
+            imageView.setImageBitmap(cached)
+            synchronized(this) { boundKeys[imageView] = key }
+            return
         }
 
         imageView.setImageDrawable(fallback)
-        val normalizedUrls = urls
-            .asSequence()
-            .map(String::trim)
-            .filter { it.startsWith("http://") || it.startsWith("https://") }
-            .distinct()
-            .toList()
         if (localPath.isNullOrBlank() && normalizedUrls.isEmpty()) return
 
         val job = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
@@ -137,6 +158,9 @@ internal object AvatarLoader {
                 if (!current) return@withContext
                 if (bitmap != null && !bitmap.isRecycled) {
                     imageView.setImageBitmap(bitmap)
+                    // Only a successful load is remembered, so a row whose
+                    // avatar failed still retries on the next bind.
+                    synchronized(this@AvatarLoader) { boundKeys[imageView] = key }
                 } else {
                     imageView.setImageDrawable(fallback)
                 }
@@ -159,6 +183,8 @@ internal object AvatarLoader {
         synchronized(this) {
             jobs.remove(imageView)?.cancel()
             requestIds.remove(imageView)
+            // boundKeys survives on purpose: the bitmap is still painted, so a
+            // re-bind of the same request can skip the reload entirely.
         }
     }
 
@@ -181,14 +207,16 @@ internal object AvatarLoader {
             navigationRequestIds[toolbar] = requestId
         }
 
-        toolbar.navigationIcon = fallback
+        val placeholder = pinnedSize(toolbar, fallback, TOOLBAR_AVATAR_DP)
         toolbar.navigationContentDescription = "我的头像"
-        val normalizedUrls = urls
-            .asSequence()
-            .map(String::trim)
-            .filter { it.startsWith("http://") || it.startsWith("https://") }
-            .distinct()
-            .toList()
+        val normalizedUrls = normalizeUrls(urls)
+
+        peekMemory(localPath, normalizedUrls)?.let { cached ->
+            toolbar.navigationIcon = circularToolbarAvatar(toolbar, cached, TOOLBAR_AVATAR_DP)
+            return
+        }
+
+        toolbar.navigationIcon = placeholder
         if (localPath.isNullOrBlank() && normalizedUrls.isEmpty()) return
 
         val job = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
@@ -208,7 +236,7 @@ internal object AvatarLoader {
                 toolbar.navigationIcon = bitmap
                     ?.takeUnless(Bitmap::isRecycled)
                     ?.let { circularToolbarAvatar(toolbar, it, TOOLBAR_AVATAR_DP) }
-                    ?: fallback
+                    ?: placeholder
                 synchronized(this@AvatarLoader) {
                     if (navigationRequestIds[toolbar] == requestId) {
                         navigationJobs.remove(toolbar)
@@ -249,14 +277,16 @@ internal object AvatarLoader {
             logoRequestIds[toolbar] = requestId
         }
 
-        toolbar.logo = fallback
+        val placeholder = pinnedSize(toolbar, fallback, sizeDp)
         toolbar.logoDescription = "对方头像"
-        val normalizedUrls = urls
-            .asSequence()
-            .map(String::trim)
-            .filter { it.startsWith("http://") || it.startsWith("https://") }
-            .distinct()
-            .toList()
+        val normalizedUrls = normalizeUrls(urls)
+
+        peekMemory(localPath, normalizedUrls)?.let { cached ->
+            toolbar.logo = circularToolbarAvatar(toolbar, cached, sizeDp)
+            return
+        }
+
+        toolbar.logo = placeholder
         if (localPath.isNullOrBlank() && normalizedUrls.isEmpty()) return
 
         val job = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
@@ -276,7 +306,7 @@ internal object AvatarLoader {
                 toolbar.logo = bitmap
                     ?.takeUnless(Bitmap::isRecycled)
                     ?.let { circularToolbarAvatar(toolbar, it, sizeDp) }
-                    ?: fallback
+                    ?: placeholder
                 synchronized(this@AvatarLoader) {
                     if (logoRequestIds[toolbar] == requestId) {
                         logoJobs.remove(toolbar)
@@ -295,6 +325,56 @@ internal object AvatarLoader {
             logoJobs.remove(toolbar)?.cancel()
             logoRequestIds.remove(toolbar)
         }
+    }
+
+    private fun normalizeUrls(urls: List<String>): List<String> = urls
+        .asSequence()
+        .map(String::trim)
+        .filter { it.startsWith("http://") || it.startsWith("https://") }
+        .distinct()
+        .toList()
+
+    /** Identity of a load request, used to recognise an unchanged re-bind. */
+    private fun requestKey(localPath: String?, urls: List<String>): String =
+        "local=${localPath.orEmpty().trim()}|urls=${urls.joinToString(separator = " ")}"
+
+    /**
+     * The bitmap [load] would return, but only if it is already decoded in the
+     * memory cache.  Probed in the same order [load] uses so a view never jumps
+     * between two different sources for one contact.
+     */
+    private fun peekMemory(localPath: String?, urls: List<String>): Bitmap? {
+        if (!localPath.isNullOrBlank()) {
+            memoryCache.get("local:${localPath.trim()}")
+                ?.takeUnless(Bitmap::isRecycled)
+                ?.let { return it }
+        }
+        urls.forEach { url ->
+            memoryCache.get("url:$url")?.takeUnless(Bitmap::isRecycled)?.let { return it }
+        }
+        return null
+    }
+
+    /**
+     * Toolbar measures its logo and navigation slots from the drawable's own
+     * intrinsic size.  The placeholder vector is 24dp while a loaded avatar is
+     * [sizeDp], so without pinning both to a single size the avatar visibly
+     * grows the moment the load lands — most noticeably on group chats, whose
+     * avatar only ever arrives over the network.
+     */
+    private fun pinnedSize(
+        toolbar: MaterialToolbar,
+        drawable: Drawable?,
+        sizeDp: Int,
+    ): Drawable? {
+        drawable ?: return null
+        val targetPx = (sizeDp * toolbar.resources.displayMetrics.density)
+            .toInt()
+            .coerceAtLeast(1)
+        if (drawable.intrinsicWidth == targetPx && drawable.intrinsicHeight == targetPx) {
+            return drawable
+        }
+        return LayerDrawable(arrayOf(drawable)).apply { setLayerSize(0, targetPx, targetPx) }
     }
 
     private fun circularToolbarAvatar(

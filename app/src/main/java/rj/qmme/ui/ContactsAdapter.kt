@@ -49,8 +49,15 @@ class ContactsAdapter(
 
     private var rows: List<Row> = emptyList()
 
+    /**
+     * The categories StateFlow replays its current value whenever the screen
+     * returns to STARTED, so an unconditional rebind would reset every avatar
+     * and re-resolve every segmented shape for a list that did not change.
+     * [Row] is built from data classes, so structural equality is enough.
+     */
+    @SuppressLint("NotifyDataSetChanged")
     fun submitCategories(categories: List<ContactsViewModel.UiCategory>) {
-        rows = buildList {
+        val updated = buildList {
             categories.forEach { category ->
                 add(Row.Header(category))
                 category.buddies.forEachIndexed { index, buddy ->
@@ -64,6 +71,8 @@ class ContactsAdapter(
                 }
             }
         }
+        if (updated == rows) return
+        rows = updated
         notifyDataSetChanged()
     }
 

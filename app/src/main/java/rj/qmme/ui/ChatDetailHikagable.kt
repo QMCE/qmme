@@ -83,6 +83,7 @@ class ChatDetailHikagable(
     )
     private var bound = false
     private var lastLoading = false
+    private var messagesRevealed = false
     private var boundViewModel: ChatDetailViewModel? = null
     private var cachedHikage: Hikage.Delegate<*>? = null
 
@@ -208,7 +209,13 @@ class ChatDetailHikagable(
         ) {
             swipeRefresh = SwipeRefreshLayout(
                 lparams = LayoutParams(matchParent = true),
-                init = { applyM3Colors(this) },
+                init = {
+                    applyM3Colors(this)
+                    // The history arrives after the screen is already on top of
+                    // the stack, so the list starts transparent and is faded in
+                    // by revealMessages() instead of popping into place.
+                    alpha = 0f
+                },
             ) {
                 recyclerView = RecyclerView(
                     lparams = LayoutParams(matchParent = true),
@@ -522,20 +529,27 @@ class ChatDetailHikagable(
                                 recyclerView.scrollToPosition(messages.lastIndex)
                             }
                             updateEmptyState()
+                            // Reveal only once the list has actually been laid
+                            // out at the bottom, so the fade shows the settled
+                            // conversation rather than it scrolling into place.
+                            if (messages.isNotEmpty()) revealMessages()
                         }
                     }
                 }
                 launch {
                     viewModel.statusText.collectLatest { text ->
                         statusText.text = text
-                        statusCard.visibility = if (text.isBlank()) View.GONE else View.VISIBLE
+                        Motion.fadeVisibility(statusCard, visible = text.isNotBlank())
                     }
                 }
                 launch {
                     viewModel.loading.collectLatest { loading ->
                         lastLoading = loading
-                        statusProgress.visibility = if (loading) View.VISIBLE else View.GONE
+                        Motion.fadeVisibility(statusProgress, loading)
                         updateEmptyState()
+                        // An empty chat never delivers messages, so settling the
+                        // load is the other signal that the screen is ready.
+                        if (!loading) revealMessages()
                     }
                 }
                 launch {
@@ -559,12 +573,21 @@ class ChatDetailHikagable(
         viewModel.openChat(target, accountUin)
     }
 
+    /**
+     * The first delivered page and the load settling can land in the same
+     * frame, so the flag keeps two spring animations off the same alpha.
+     */
+    private fun revealMessages() {
+        if (messagesRevealed) return
+        messagesRevealed = true
+        Motion.fadeIn(swipeRefresh, Motion.defaultEffects(context))
+    }
+
     private fun updateEmptyState() {
-        emptyView.visibility = if (adapter.currentList.isEmpty() && !lastLoading) {
-            View.VISIBLE
-        } else {
-            View.GONE
-        }
+        Motion.fadeVisibility(
+            emptyView,
+            visible = adapter.currentList.isEmpty() && !lastLoading,
+        )
     }
 
     private fun showMessageActions(

@@ -7,7 +7,9 @@ import androidx.dynamicanimation.animation.DynamicAnimation
 import androidx.dynamicanimation.animation.FloatValueHolder
 import androidx.dynamicanimation.animation.SpringAnimation
 import androidx.dynamicanimation.animation.SpringForce
+import androidx.transition.TransitionManager
 import com.google.android.material.motion.MotionUtils
+import com.google.android.material.transition.MaterialFade
 
 /**
  * Material 3 Expressive motion helpers.
@@ -43,6 +45,47 @@ internal object Motion {
             com.google.android.material.R.attr.motionSpringDefaultEffects,
             com.google.android.material.R.style.Motion_Material3_Spring_Expressive_Default_Effects,
         )
+
+    /**
+     * Shows or hides a view with the M3 fade for elements entering and leaving
+     * within a container.  The transition is scoped to [view] alone, so its
+     * siblings simply re-layout instead of being dragged into the animation.
+     *
+     * The early return matters as much as the animation: a screen that comes
+     * back to STARTED re-subscribes every StateFlow collector and immediately
+     * receives the current value again, so without it a plain return from a
+     * chat would replay every status/empty-state fade.
+     */
+    fun fadeVisibility(view: View, visible: Boolean) {
+        val target = if (visible) View.VISIBLE else View.GONE
+        if (view.visibility == target) return
+        val parent = view.parent as? ViewGroup
+        if (parent == null || !view.isAttachedToWindow) {
+            view.visibility = target
+            return
+        }
+        TransitionManager.beginDelayedTransition(parent, MaterialFade().apply { addTarget(view) })
+        view.visibility = target
+    }
+
+    /**
+     * One-shot reveal for a container that was deliberately drawn transparent
+     * because its content was not loaded yet.  Effects springs are critically
+     * damped, so alpha lands on 1 without overshooting.
+     */
+    fun fadeIn(view: View, force: SpringForce) {
+        if (view.alpha >= 1f) return
+        SpringAnimation(view, DynamicAnimation.ALPHA).apply {
+            setSpring(
+                SpringForce(1f).apply {
+                    stiffness = force.stiffness
+                    dampingRatio = force.dampingRatio
+                },
+            )
+            setMinimumVisibleChange(DynamicAnimation.MIN_VISIBLE_CHANGE_ALPHA)
+            start()
+        }
+    }
 
     /**
      * Springs a view's layout height, used by the expanding attachment panel.
