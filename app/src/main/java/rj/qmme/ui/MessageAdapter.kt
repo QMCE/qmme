@@ -33,7 +33,7 @@ import java.util.Date
 /** Material 3 Expressive message rows: grouped by sender, list-flavored, time on the meta row. */
 class MessageAdapter(
     private val isGroup: Boolean = false,
-    private val onImageClick: (ChatDetailViewModel.UiImage) -> Unit = {},
+    private val onImageClick: (ChatDetailViewModel.UiImage, View?) -> Unit = { _, _ -> },
     private val onMessageLongClick: (ChatDetailViewModel.UiMessage) -> Unit = {},
 ) : ListAdapter<ChatDetailViewModel.UiMessage, MessageAdapter.Holder>(DIFF) {
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
@@ -255,7 +255,7 @@ class MessageAdapter(
         private val image: ShapeableImageView,
         private val body: MaterialTextView,
         private val isGroup: Boolean,
-        private val onImageClick: (ChatDetailViewModel.UiImage) -> Unit,
+        private val onImageClick: (ChatDetailViewModel.UiImage, View?) -> Unit,
         private val onMessageLongClick: (ChatDetailViewModel.UiMessage) -> Unit,
     ) : RecyclerView.ViewHolder(itemView) {
         fun bind(
@@ -379,7 +379,7 @@ class MessageAdapter(
                     fallback = null,
                     circular = false,
                 )
-                image.setOnClickListener { onImageClick(picture) }
+                image.setOnClickListener { onImageClick(picture, image) }
             }
             body.text = message.text
             body.visibility = if (picture != null && message.text == "[图片]") {

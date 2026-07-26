@@ -15,14 +15,14 @@ import com.highcapable.hikage.core.Hikage
 import com.highcapable.hikage.core.base.Hikagable
 import com.highcapable.hikage.core.layout.LayoutParams
 import com.highcapable.hikage.widget.android.widget.LinearLayout
-import com.highcapable.hikage.widget.android.widget.RadioGroup
+import com.highcapable.hikage.widget.com.google.android.material.button.MaterialButtonToggleGroup
 import com.highcapable.hikage.widget.android.widget.ScrollView
 import com.highcapable.hikage.widget.com.google.android.material.button.MaterialButton
 import com.highcapable.hikage.widget.com.google.android.material.card.MaterialCardView
 import com.highcapable.hikage.widget.com.google.android.material.checkbox.MaterialCheckBox
 import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView
 import rj.qmme.ui.hikage.LoadingIndicator
-import com.highcapable.hikage.widget.com.google.android.material.radiobutton.MaterialRadioButton
+import rj.qmme.ui.hikage.OutlinedButton
 import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView
 import com.tencent.qphone.base.remote.SimpleAccount
 import kotlinx.coroutines.launch
@@ -133,27 +133,26 @@ class LoginHikagable(
             addTitle("选择屏幕适配类型")
             addBody("这将影响列表的缩放效果", 14f)
             addSpacer(14)
-            RadioGroup(
+            // Single-select M3 toggle group (selection semantics), instead of
+            // radio rows. The Expressive theme animates checked-state shape
+            // morphs on the child buttons for free.
+            val screenTypeGroup = MaterialButtonToggleGroup(
                 lparams = LayoutParams(widthMatchParent = true),
                 init = {
-                    orientation = AndroidLinearLayout.VERTICAL
-                    gravity = Gravity.CENTER_HORIZONTAL
-                }
+                    isSingleSelection = true
+                    isSelectionRequired = true
+                },
             ) {
-                MaterialRadioButton(
-                    lparams = LayoutParams(widthMatchParent = true) {
-                        topMargin = dp(4)
-                    },
+                OutlinedButton(
+                    lparams = LayoutParams(widthMatchParent = true),
                     init = {
-                        text = "方形屏幕\n适用于手机"
-                        TextViewCompat.setTextAppearance(
-                            this,
-                            com.google.android.material.R.style.TextAppearance_Material3_BodyLarge
-                        )
-                        setPadding(dp(12), dp(8), dp(12), dp(8))
-                    }
+                        text = "方形屏幕 · 适用于手机"
+                        isAllCaps = false
+                    },
                 )
             }
+            // The group assigns generated ids on add; check the only option.
+            screenTypeGroup.getChildAt(0)?.let { screenTypeGroup.check(it.id) }
             addSpacer(12)
             addPrimaryButton("继续") { showStep(Step.Agreement) }
             addSecondaryButton("返回") { showStep(Step.Welcome) }

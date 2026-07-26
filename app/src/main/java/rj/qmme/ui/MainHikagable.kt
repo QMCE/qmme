@@ -431,7 +431,18 @@ class MainHikagable(
                     marginEnd = dp(12)
                     bottomMargin = dp(4)
                 },
-                init = { isClickable = false },
+                init = {
+                    isClickable = false
+                    // Passive status strip: filled tonal surface, no shadow.
+                    cardElevation = 0f
+                    strokeWidth = 0
+                    setCardBackgroundColor(
+                        MaterialColors.getColor(
+                            this,
+                            com.google.android.material.R.attr.colorSurfaceContainerHigh,
+                        ),
+                    )
+                },
             ) {
                 LinearLayout(
                     lparams = LayoutParams(matchParent = true),
@@ -494,7 +505,17 @@ class MainHikagable(
                     marginEnd = dp(12)
                     bottomMargin = dp(4)
                 },
-                init = { isClickable = false },
+                init = {
+                    isClickable = false
+                    cardElevation = 0f
+                    strokeWidth = 0
+                    setCardBackgroundColor(
+                        MaterialColors.getColor(
+                            this,
+                            com.google.android.material.R.attr.colorSurfaceContainerHigh,
+                        ),
+                    )
+                },
             ) {
                 LinearLayout(
                     lparams = LayoutParams(matchParent = true),

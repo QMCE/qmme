@@ -2,20 +2,27 @@ package rj.qmme.ui.navigation
 
 import android.view.View
 import android.widget.FrameLayout
+import androidx.activity.BackEventCompat
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import androidx.transition.Transition
 import androidx.transition.TransitionManager
 import com.google.android.material.transition.MaterialSharedAxis
-import com.highcapable.betterandroid.ui.extension.component.OnBackPressedCallback
 
 /**
  * Native-View navigation stack for QMME's Hikage screens.
  *
  * Every entry has its own LifecycleOwner. Hidden or removed pages stop their
  * StateFlow collectors even though the hosting Activity stays alive.
+ *
+ * Motion: pushes and pops run M3 shared-axis X transitions by default; both
+ * accept an override so callers can use e.g. a container transform for
+ * image previews. The predictive back gesture scales and shifts the top
+ * page with the user's finger per the M3 predictive-back spec.
  */
 class ViewNavigator(
     activity: AppCompatActivity,
@@ -80,12 +87,42 @@ class ViewNavigator(
     private val entries = ArrayDeque<Entry>()
     private var hostStarted = activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
 
+    /** The page currently tracking the predictive back gesture. */
+    private var predictiveTarget: View? = null
+
     init {
         activity.lifecycle.addObserver(this)
         activity.onBackPressedDispatcher.addCallback(
             activity,
-            OnBackPressedCallback {
-                if (!pop()) onRootBack()
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackStarted(backEvent: BackEventCompat) {
+                    predictiveTarget = if (entries.size > 1) entries.lastOrNull()?.view else null
+                }
+
+                override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+                    val view = predictiveTarget ?: return
+                    // M3 predictive back: the surface shrinks toward ~90% and
+                    // follows the finger horizontally, away from the swiped edge.
+                    val progress = backEvent.progress
+                    val scale = 1f - MAX_SCALE_DELTA * progress
+                    view.scaleX = scale
+                    view.scaleY = scale
+                    val direction =
+                        if (backEvent.swipeEdge == BackEventCompat.EDGE_LEFT) 1f else -1f
+                    view.translationX =
+                        direction * progress * view.width * MAX_SHIFT_FRACTION
+                }
+
+                override fun handleOnBackCancelled() {
+                    predictiveTarget?.let(::resetTransforms)
+                    predictiveTarget = null
+                }
+
+                override fun handleOnBackPressed() {
+                    predictiveTarget?.let(::resetTransforms)
+                    predictiveTarget = null
+                    if (!pop()) onRootBack()
+                }
             },
         )
     }
@@ -100,19 +137,25 @@ class ViewNavigator(
         entry.show(hostStarted)
     }
 
-    fun push(entry: Entry) {
-        // M3 Expressive lateral navigation: shared X axis, forward direction.
+    fun push(entry: Entry, transition: Transition? = null) {
+        // Default M3 lateral navigation: shared X axis, forward direction.
         // TransitionManager picks up the visibility flips that follow.
-        TransitionManager.beginDelayedTransition(host, MaterialSharedAxis(MaterialSharedAxis.X, true))
+        TransitionManager.beginDelayedTransition(
+            host,
+            transition ?: MaterialSharedAxis(MaterialSharedAxis.X, true),
+        )
         entries.lastOrNull()?.hide()
         attach(entry)
         entries.addLast(entry)
         entry.show(hostStarted)
     }
 
-    fun pop(): Boolean {
+    fun pop(transition: Transition? = null): Boolean {
         if (entries.size <= 1) return false
-        TransitionManager.beginDelayedTransition(host, MaterialSharedAxis(MaterialSharedAxis.X, false))
+        TransitionManager.beginDelayedTransition(
+            host,
+            transition ?: MaterialSharedAxis(MaterialSharedAxis.X, false),
+        )
         val removed = entries.removeLast()
         host.removeView(removed.view)
         removed.dispose()
@@ -152,5 +195,16 @@ class ViewNavigator(
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
+    }
+
+    private fun resetTransforms(view: View) {
+        view.scaleX = 1f
+        view.scaleY = 1f
+        view.translationX = 0f
+    }
+
+    private companion object {
+        const val MAX_SCALE_DELTA = 0.10f
+        const val MAX_SHIFT_FRACTION = 0.05f
     }
 }

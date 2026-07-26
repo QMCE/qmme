@@ -1,13 +1,12 @@
 package rj.qmme.ui
 
 import android.content.Context
-import android.content.res.ColorStateList
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.widget.EditText
+import com.google.android.material.textfield.TextInputEditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.core.widget.TextViewCompat
@@ -15,6 +14,7 @@ import androidx.dynamicanimation.animation.SpringAnimation
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -35,7 +35,7 @@ import com.highcapable.betterandroid.ui.extension.view.toast
 import com.highcapable.hikage.core.Hikage
 import com.highcapable.hikage.core.base.Hikagable
 import com.highcapable.hikage.core.layout.LayoutParams
-import com.highcapable.hikage.widget.android.widget.EditText
+import com.highcapable.hikage.widget.com.google.android.material.textfield.TextInputEditText
 import com.highcapable.hikage.widget.android.widget.FrameLayout
 import com.highcapable.hikage.widget.android.widget.LinearLayout
 import com.highcapable.hikage.widget.androidx.recyclerview.widget.RecyclerView
@@ -60,7 +60,7 @@ class ChatDetailHikagable(
     private val target: ChatDetailViewModel.ChatTarget,
     private val onBack: () -> Unit,
     private val onPickImage: () -> Unit,
-    onOpenImage: (ChatDetailViewModel.UiImage) -> Unit,
+    onOpenImage: (ChatDetailViewModel.UiImage, View?) -> Unit,
 ) : HikageScreen {
     private lateinit var toolbar: MaterialToolbar
     private lateinit var statusCard: MaterialCardView
@@ -69,7 +69,7 @@ class ChatDetailHikagable(
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var recyclerView: RecyclerView
     private lateinit var emptyView: View
-    private lateinit var input: EditText
+    private lateinit var input: TextInputEditText
     private lateinit var imageButton: MaterialButton
     private lateinit var sendButton: MaterialButton
     private lateinit var attachmentPanel: View
@@ -151,6 +151,19 @@ class ChatDetailHikagable(
                 marginEnd = dp(12)
                 bottomMargin = dp(4)
             },
+            init = {
+                // Filled inline banner: tonal surface, no shadow. The default
+                // elevated card reads as a floating actionable element, which
+                // a passive status strip is not.
+                cardElevation = 0f
+                strokeWidth = 0
+                setCardBackgroundColor(
+                    MaterialColors.getColor(
+                        this,
+                        com.google.android.material.R.attr.colorSurfaceContainerHigh,
+                    ),
+                )
+            },
         ) {
             LinearLayout(
                 lparams = LayoutParams(matchParent = true),
@@ -202,7 +215,15 @@ class ChatDetailHikagable(
                     init = {
                         layoutManager = LinearLayoutManager(context).apply { stackFromEnd = true }
                         adapter = this@ChatDetailHikagable.adapter
-                        itemAnimator = null
+                        // Keep add/remove animations (new bubbles slide-fade in)
+                        // but disable change animations: grouped-corner rebinds
+                        // use notifyItemChanged and would cross-fade the whole
+                        // row on every send otherwise.
+                        itemAnimator = DefaultItemAnimator().apply {
+                            supportsChangeAnimations = false
+                            addDuration = 220L
+                            removeDuration = 160L
+                        }
                         clipToPadding = false
                         overScrollMode = View.OVER_SCROLL_NEVER
                         setPadding(0, dp(8), 0, dp(12))
@@ -220,25 +241,39 @@ class ChatDetailHikagable(
                     visibility = View.GONE
                 },
             ) {
+                // M3 Expressive empty state: glyph on a cookie-12 badge in
+                // secondaryContainer, not a lone faded icon.
                 ShapeableImageView(
-                    lparams = LayoutParams(width = dp(48), height = dp(48)),
+                    lparams = LayoutParams(width = dp(96), height = dp(96)),
                     init = {
-                        setImageResource(R.drawable.ic_chat)
-                        alpha = 0.5f
-                        imageTintList = ColorStateList.valueOf(
-                            MaterialColors.getColor(
-                                this,
-                                com.google.android.material.R.attr.colorOnSurfaceVariant,
+                        setImageDrawable(
+                            ExpressiveShapes.emptyStateBadge(
+                                anchor = this,
+                                glyph = context.getDrawableCompat(R.drawable.ic_chat),
+                                sizePx = dp(96),
                             ),
+                        )
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    },
+                )
+                MaterialTextView(
+                    lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
+                        topMargin = dp(16)
+                    },
+                    init = {
+                        text = "还没有消息"
+                        TextViewCompat.setTextAppearance(
+                            this,
+                            com.google.android.material.R.style.TextAppearance_Material3_TitleMedium_Emphasized,
                         )
                     },
                 )
                 MaterialTextView(
                     lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
-                        topMargin = dp(8)
+                        topMargin = dp(4)
                     },
                     init = {
-                        text = "还没有消息，打个招呼吧"
+                        text = "打个招呼吧"
                         TextViewCompat.setTextAppearance(
                             this,
                             com.google.android.material.R.style.TextAppearance_Material3_BodyMedium,
@@ -294,7 +329,9 @@ class ChatDetailHikagable(
                         setOnClickListener { toggleAttachmentPanel() }
                     },
                 )
-                input = EditText(
+                // TextInputEditText (used standalone) keeps M3 cursor, handle
+                // and highlight theming that a bare framework EditText lacks.
+                input = TextInputEditText(
                     lparams = LayoutParams(
                         width = 0,
                         height = ViewGroup.LayoutParams.WRAP_CONTENT
