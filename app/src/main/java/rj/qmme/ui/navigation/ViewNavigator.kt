@@ -7,6 +7,8 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import androidx.transition.TransitionManager
+import com.google.android.material.transition.MaterialSharedAxis
 import com.highcapable.betterandroid.ui.extension.component.OnBackPressedCallback
 
 /**
@@ -99,6 +101,9 @@ class ViewNavigator(
     }
 
     fun push(entry: Entry) {
+        // M3 Expressive lateral navigation: shared X axis, forward direction.
+        // TransitionManager picks up the visibility flips that follow.
+        TransitionManager.beginDelayedTransition(host, MaterialSharedAxis(MaterialSharedAxis.X, true))
         entries.lastOrNull()?.hide()
         attach(entry)
         entries.addLast(entry)
@@ -107,6 +112,7 @@ class ViewNavigator(
 
     fun pop(): Boolean {
         if (entries.size <= 1) return false
+        TransitionManager.beginDelayedTransition(host, MaterialSharedAxis(MaterialSharedAxis.X, false))
         val removed = entries.removeLast()
         host.removeView(removed.view)
         removed.dispose()

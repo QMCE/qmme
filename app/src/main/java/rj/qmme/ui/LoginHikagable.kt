@@ -21,17 +21,18 @@ import com.highcapable.hikage.widget.com.google.android.material.button.Material
 import com.highcapable.hikage.widget.com.google.android.material.card.MaterialCardView
 import com.highcapable.hikage.widget.com.google.android.material.checkbox.MaterialCheckBox
 import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView
-import com.highcapable.hikage.widget.com.google.android.material.progressindicator.CircularProgressIndicator
+import rj.qmme.ui.hikage.LoadingIndicator
 import com.highcapable.hikage.widget.com.google.android.material.radiobutton.MaterialRadioButton
 import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView
 import com.tencent.qphone.base.remote.SimpleAccount
 import kotlinx.coroutines.launch
 import rj.qmme.R
+import rj.qmme.ui.hikage.TonalButton
 import rj.qmme.viewmodel.AuthViewModel
 import android.widget.LinearLayout as AndroidLinearLayout
 import com.google.android.material.button.MaterialButton as MaterialButtonView
 import com.google.android.material.imageview.ShapeableImageView as ShapeableImageViewView
-import com.google.android.material.progressindicator.CircularProgressIndicator as CircularProgressIndicatorView
+import com.google.android.material.loadingindicator.LoadingIndicator as LoadingIndicatorView
 import com.google.android.material.textview.MaterialTextView as MaterialTextViewView
 import com.highcapable.hikage.annotation.Hikagable
 
@@ -53,7 +54,7 @@ class LoginHikagable(
     private var loginUiState: AuthViewModel.LoginUiState = AuthViewModel.LoginUiState.Idle
     private var busy = false
     private var qrImage: ShapeableImageViewView? = null
-    private var qrProgress: CircularProgressIndicatorView? = null
+    private var qrProgress: LoadingIndicatorView? = null
     private var qrStatus: MaterialTextViewView? = null
     private var qrRetry: MaterialButtonView? = null
     private lateinit var scrollRoot: ScrollView
@@ -201,8 +202,10 @@ class LoginHikagable(
                 }
             )
             qrImage = image
-            val progress = CircularProgressIndicator(
-                lparams = LayoutParams(width = dp(44), height = dp(44)) {
+            // The M3 Expressive shape-morphing loader; contained waits like
+            // the QR bootstrap are its canonical use case.
+            val progress = LoadingIndicator(
+                lparams = LayoutParams(width = dp(48), height = dp(48)) {
                     gravity = Gravity.CENTER_HORIZONTAL
                     topMargin = dp(12)
                 },
@@ -305,9 +308,10 @@ class LoginHikagable(
             lparams = LayoutParams(widthMatchParent = true),
             init = {
                 this.text = text
+                // Emphasized typescale — the M3 Expressive onboarding voice.
                 TextViewCompat.setTextAppearance(
                     this,
-                    com.google.android.material.R.style.TextAppearance_Material3_TitleLarge
+                    com.google.android.material.R.style.TextAppearance_Material3_HeadlineSmall_Emphasized
                 )
                 gravity = Gravity.CENTER
             }
@@ -359,19 +363,29 @@ class LoginHikagable(
         onClick: () -> Unit,
         primary: Boolean,
     ): MaterialButtonView {
-        val button = MaterialButton(
-            lparams = LayoutParams(widthMatchParent = true) {
-                topMargin = dp(4)
-            },
-            init = {
-                this.text = text
-                // fixme: bugful button
-                // TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_LabelLarge)
-                isAllCaps = false
-                if (!primary) strokeWidth = dp(1)
-                setOnClickListener { onClick() }
-            }
-        )
+        // Filled for the single primary action, tonal for everything else —
+        // the M3 Expressive pairing. The tonal style comes from the theme's
+        // materialButtonTonalStyle, not a hand-drawn outline on a filled
+        // button, so pressed-state shape morphing stays intact.
+        val button = if (primary) {
+            MaterialButton(
+                lparams = LayoutParams(widthMatchParent = true) { topMargin = dp(4) },
+                init = {
+                    this.text = text
+                    isAllCaps = false
+                    setOnClickListener { onClick() }
+                }
+            )
+        } else {
+            TonalButton(
+                lparams = LayoutParams(widthMatchParent = true) { topMargin = dp(4) },
+                init = {
+                    this.text = text
+                    isAllCaps = false
+                    setOnClickListener { onClick() }
+                }
+            )
+        }
         addSpacer(4)
         return button
     }

@@ -172,14 +172,8 @@ class ContactsAdapter(
                         // shape states. Removing default content padding lets the
                         // divider travel across the entire visual card.
                         setContentPadding(0, 0, 0, 0)
-                        // Dynamic M3 surface-container color makes the full
-                        // first/middle/last run read as one grouped card.
-                        setCardBackgroundColor(
-                            MaterialColors.getColor(
-                                this,
-                                android.R.attr.colorBackground,
-                            ),
-                        )
+                        // Background color is intentionally left to the segmented
+                        // style's state selector — see ConversationAdapter.
                         isClickable = true
                         isFocusable = true
                         isSwipeEnabled = false
@@ -219,7 +213,7 @@ class ContactsAdapter(
                                     height = ViewGroup.LayoutParams.WRAP_CONTENT,
                                 ) {
                                     weight = 1f
-                                    leftMargin = dp(parent, 12)
+                                    marginStart = dp(parent, 12)
                                 },
                                 init = { orientation = LinearLayout.VERTICAL },
                             ) {
@@ -281,8 +275,8 @@ class ContactsAdapter(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply {
-            leftMargin = dp(parent, 8)
-            rightMargin = dp(parent, 8)
+            marginStart = dp(parent, 8)
+            marginEnd = dp(parent, 8)
         }
         return BuddyHolder(root, itemCard, avatar, title, subtitle, divider, officialAvatar)
     }
