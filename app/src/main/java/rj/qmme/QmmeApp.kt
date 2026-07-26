@@ -745,20 +745,46 @@ class QmmeApp : WatchApplicationDelegate() {
     /**
      * Initialize the official QIMEI SDK (libqimei.so) under [BEACON_APP_KEY] so a
      * real, stable device fingerprint is attached to SSO packets (ReserveFields
-     * .qimei) and handed to WtLogin (QIMEI16). Note: Official uses false parameter
-     * to respect privacy gate (bypassed via BeaconSDKInitTask); using false to match
-     * official behavior. Safe to call in every process.
+     * .qimei) and handed to WtLogin (QIMEI16).
+     *
+     * Matches the official MiscInitTask exactly: it calls Qqimei.b(false), which
+     * only initializes when PrivacyPolicyHelper.a() is true. We therefore first
+     * persist the privacy-policy state to "1" (user-accepted) in the same MMKV
+     * store the helper reads, so the official false path runs the full init
+     * instead of returning early. This keeps behavior identical to the stock
+     * client rather than force-bypassing the privacy gate with b(true).
      */
     private fun initializeQimei() {
         if (!qimeiInitialized.compareAndSet(false, true)) return
         runCatching { System.loadLibrary("qimei") }
             .onFailure { Log.d("QMME", "libqimei preload skipped: ${it.message}") }
+        // Mark privacy policy as accepted so Qqimei.b(false) proceeds like official.
+        ensurePrivacyPolicyAccepted()
         runCatching {
-            // Use false to match official MiscInitTask behavior
+            // Match official MiscInitTask: Qqimei.b(false)
             com.tencent.mobileqq.statistics.Qqimei.b(false)
             val qimei36 = com.tencent.mobileqq.statistics.Qqimei.a()
             Log.d("QMME", "QIMEI init done qimei36Len=${qimei36?.length ?: 0}")
         }.onFailure { Log.w("QMME", "QIMEI init failed", it) }
+    }
+
+    /**
+     * Persist privacy-policy acceptance to the MMKV store that
+     * PrivacyPolicyHelper.a() reads. The official helper returns true only when
+     * "common_mmkv_configurations"/"privacypolicy_state" == "1"; setting it here
+     * lets the stock QIMEI/telemetry init paths run unmodified.
+     */
+    private fun ensurePrivacyPolicyAccepted() {
+        runCatching {
+            val helperClass = Class.forName("com.tencent.mobileqq.app.privacy.PrivacyPolicyHelper")
+            // Fast path: already accepted (cached static field a == true).
+            if (runCatching { helperClass.getMethod("a").invoke(null) as? Boolean }.getOrNull() == true) {
+                return
+            }
+            val entity = com.tencent.mobileqq.qmmkv.QMMKV.a(this, "common_mmkv_configurations")
+            entity.v("privacypolicy_state", "1")
+            Log.d("QMME", "privacy policy state set to accepted")
+        }.onFailure { Log.w("QMME", "ensurePrivacyPolicyAccepted failed", it) }
     }
 
     private fun isMsfProcess(): Boolean {
