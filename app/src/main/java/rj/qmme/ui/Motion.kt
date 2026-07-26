@@ -58,10 +58,14 @@ internal object Motion {
     ): SpringAnimation {
         val holder = FloatValueHolder(from.toFloat())
         return SpringAnimation(holder).apply {
-            spring = SpringForce(to.toFloat()).apply {
-                stiffness = force.stiffness
-                dampingRatio = force.dampingRatio
-            }
+            // setSpring is fluent (returns SpringAnimation), so no Kotlin
+            // property syntax here.
+            setSpring(
+                SpringForce(to.toFloat()).apply {
+                    stiffness = force.stiffness
+                    dampingRatio = force.dampingRatio
+                },
+            )
             setStartValue(from.toFloat())
             setMinimumVisibleChange(1f)
             addUpdateListener { _, value, _ ->

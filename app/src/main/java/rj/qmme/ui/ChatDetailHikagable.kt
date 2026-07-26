@@ -147,8 +147,8 @@ class ChatDetailHikagable(
         statusCard = MaterialCardView(
             lparams = LayoutParams(widthMatchParent = true) {
                 topMargin = dp(12)
-                leftMargin = dp(12)
-                rightMargin = dp(12)
+                marginStart = dp(12)
+                marginEnd = dp(12)
                 bottomMargin = dp(4)
             },
         ) {
@@ -162,7 +162,7 @@ class ChatDetailHikagable(
             ) {
                 statusProgress = CircularProgressIndicator(
                     lparams = LayoutParams(width = dp(20), height = dp(20)) {
-                        rightMargin = dp(12)
+                        marginEnd = dp(12)
                     },
                     init = {
                         isIndeterminate = true
@@ -256,8 +256,8 @@ class ChatDetailHikagable(
     private fun Hikage.Performer<LinearLayout.LayoutParams>.buildComposer(): MaterialCardView =
         MaterialCardView(
             lparams = LayoutParams(widthMatchParent = true) {
-                leftMargin = dp(12)
-                rightMargin = dp(12)
+                marginStart = dp(12)
+                marginEnd = dp(12)
                 topMargin = dp(6)
                 bottomMargin = dp(8)
             },

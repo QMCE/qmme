@@ -66,7 +66,7 @@ class MessageAdapter(
                     avatar = ShapeableImageView(
                         lparams = LayoutParams(width = dp(parent, 36), height = dp(parent, 36)) {
                             gravity = Gravity.TOP
-                            rightMargin = dp(parent, 8)
+                            marginEnd = dp(parent, 8)
                         },
                         init = {
                             AvatarLoader.makeCircular(this)
@@ -87,8 +87,8 @@ class MessageAdapter(
                                 width = ViewGroup.LayoutParams.WRAP_CONTENT,
                                 height = ViewGroup.LayoutParams.WRAP_CONTENT,
                             ) {
-                                leftMargin = dp(parent, 4)
-                                rightMargin = dp(parent, 4)
+                                marginStart = dp(parent, 4)
+                                marginEnd = dp(parent, 4)
                                 bottomMargin = dp(parent, 3)
                             },
                             init = {
@@ -98,7 +98,7 @@ class MessageAdapter(
                         ) {
                             nickname = MaterialTextView(
                                 lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
-                                    rightMargin = dp(parent, 6)
+                                    marginEnd = dp(parent, 6)
                                 },
                                 init = {
                                     TextViewCompat.setTextAppearance(

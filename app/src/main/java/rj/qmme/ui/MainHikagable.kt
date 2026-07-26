@@ -427,8 +427,8 @@ class MainHikagable(
             chatStatusCard = MaterialCardView(
                 lparams = LayoutParams(widthMatchParent = true) {
                     topMargin = dp(12)
-                    leftMargin = dp(12)
-                    rightMargin = dp(12)
+                    marginStart = dp(12)
+                    marginEnd = dp(12)
                     bottomMargin = dp(4)
                 },
                 init = { isClickable = false },
@@ -490,8 +490,8 @@ class MainHikagable(
             contactsStatusCard = MaterialCardView(
                 lparams = LayoutParams(widthMatchParent = true) {
                     topMargin = dp(12)
-                    leftMargin = dp(12)
-                    rightMargin = dp(12)
+                    marginStart = dp(12)
+                    marginEnd = dp(12)
                     bottomMargin = dp(4)
                 },
                 init = { isClickable = false },
@@ -506,7 +506,7 @@ class MainHikagable(
                 ) {
                     contactsProgress = CircularProgressIndicator(
                         lparams = LayoutParams(width = dp(22), height = dp(22)) {
-                            rightMargin = dp(12)
+                            marginEnd = dp(12)
                         },
                         init = {
                             isIndeterminate = true

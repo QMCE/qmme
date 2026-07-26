@@ -213,7 +213,7 @@ class ContactsAdapter(
                                     height = ViewGroup.LayoutParams.WRAP_CONTENT,
                                 ) {
                                     weight = 1f
-                                    leftMargin = dp(parent, 12)
+                                    marginStart = dp(parent, 12)
                                 },
                                 init = { orientation = LinearLayout.VERTICAL },
                             ) {
@@ -275,8 +275,8 @@ class ContactsAdapter(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply {
-            leftMargin = dp(parent, 8)
-            rightMargin = dp(parent, 8)
+            marginStart = dp(parent, 8)
+            marginEnd = dp(parent, 8)
         }
         return BuddyHolder(root, itemCard, avatar, title, subtitle, divider, officialAvatar)
     }
