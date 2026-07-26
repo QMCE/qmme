@@ -1,8 +1,11 @@
 package rj.qmme.ui
 
+import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
+import android.view.View
 import android.widget.FrameLayout
+import com.google.android.material.transition.MaterialContainerTransform
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -134,7 +137,7 @@ class MainActivity : AppCompatActivity() {
                 pendingImageViewModel = viewModel
                 imagePicker.launch("image/*")
             },
-            onOpenImage = { openImagePreview(it) },
+            onOpenImage = { image, sourceView -> openImagePreview(image, sourceView) },
         )
         val hikage = screen.hikage.create(this, screenHost, false)
         val entry = ViewNavigator.Entry(
@@ -146,11 +149,11 @@ class MainActivity : AppCompatActivity() {
         screen.bind(entry.lifecycleOwner, viewModel, account.uin.toString())
     }
 
-    private fun openImagePreview(image: ChatDetailViewModel.UiImage) {
+    private fun openImagePreview(image: ChatDetailViewModel.UiImage, sourceView: View?) {
         val screen = ImagePreviewHikagable(
             context = this,
             image = image,
-            onBack = { navigator.pop() },
+            onBack = { navigator.pop(imageCollapseTransform(sourceView)) },
         )
         val hikage = screen.hikage.create(this, screenHost, false)
         val entry = ViewNavigator.Entry(
@@ -158,8 +161,36 @@ class MainActivity : AppCompatActivity() {
             view = hikage.root,
             disposeAction = screen::dispose,
         )
-        navigator.push(entry)
+        navigator.push(entry, imageExpandTransform(sourceView, hikage.root))
         screen.bind()
+    }
+
+    /**
+     * M3 container transform: the tapped bubble image expands into the
+     * full-screen preview. Falls back to the navigator's default shared-axis
+     * transition when the source view is gone (e.g. recycled off-screen).
+     */
+    private fun imageExpandTransform(source: View?, endView: View): MaterialContainerTransform? {
+        source ?: return null
+        return MaterialContainerTransform().apply {
+            startView = source
+            this.endView = endView
+            addTarget(endView)
+            scrimColor = Color.TRANSPARENT
+            fadeMode = MaterialContainerTransform.FADE_MODE_CROSS
+        }
+    }
+
+    private fun imageCollapseTransform(source: View?): MaterialContainerTransform? {
+        val target = source?.takeIf { it.isAttachedToWindow } ?: return null
+        val previewRoot = screenHost.getChildAt(screenHost.childCount - 1) ?: return null
+        return MaterialContainerTransform().apply {
+            startView = previewRoot
+            endView = target
+            addTarget(target)
+            scrimColor = Color.TRANSPARENT
+            fadeMode = MaterialContainerTransform.FADE_MODE_CROSS
+        }
     }
 
     private companion object {

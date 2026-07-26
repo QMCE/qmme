@@ -108,6 +108,28 @@ inline fun <reified LP : ViewGroupLayoutParams> Hikage.Performer<LP>.TonalButton
     init = init,
 )
 
+/** Outlined button — required style for MaterialButtonToggleGroup children. */
+@Hikagable
+inline fun <reified LP : ViewGroupLayoutParams> Hikage.Performer<LP>.OutlinedButton(
+    lparams: LayoutParams? = null,
+    id: String? = null,
+    noinline attrs: HikageAttribute = {},
+    noinline init: HikageView<MaterialButton> = {},
+): MaterialButton = HikageViewOf(
+    viewClass = MaterialButton::class,
+    factory = { context, attributeSet ->
+        MaterialButton(
+            context,
+            attributeSet,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle,
+        )
+    },
+    lparams = lparams,
+    id = id,
+    attrs = attrs,
+    init = init,
+)
+
 /** Text button — lowest emphasis, e.g. inline "retry" affordances. */
 @Hikagable
 inline fun <reified LP : ViewGroupLayoutParams> Hikage.Performer<LP>.TextButton(
