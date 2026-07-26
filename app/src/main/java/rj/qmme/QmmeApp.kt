@@ -39,8 +39,10 @@ import rj.qmme.data.reporting.OfficialReportBridge
 import rj.qmme.diagnostics.OfflineDiagnostics
 import rj.qmme.fix.LegacyKiller
 import rj.qmme.fix.PackageSignatureProvider
+import rj.qmme.fix.PoWHelper
 import rj.qmme.fix.SignatureProbe
 import rj.qmme.kernel.KernelBridge
+import rj.qmme.runtime.HeartbeatManager
 import rj.qmme.runtime.RuntimeCoordinator
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
@@ -61,33 +63,67 @@ class QmmeApp : WatchApplicationDelegate() {
         }
 
         override fun onAccountChanged(runtime: AppRuntime?) {
+            val isLoggedIn = runCatching { runtime?.isLogin() }.getOrNull() ?: false
             OfflineDiagnostics.record(
                 this@QmmeApp,
                 "account_changed",
                 "runtimeIdentity=${runtime?.let(System::identityHashCode) ?: "none"} " +
-                        "isLogin=${runCatching { runtime?.isLogin() }.getOrNull()}",
+                        "isLogin=$isLoggedIn",
             )
+            
+            // Start heartbeat manager when we successfully log in
+            if (isLoggedIn && !HeartbeatManager.isRegistered()) {
+                HeartbeatManager.notifyRegistered()
+                HeartbeatManager.start()
+                Log.i("QMME", "Started heartbeat manager after login")
+            }
         }
 
         override fun onLogout(reason: Constants.LogoutReason?) {
             val active = RuntimeCoordinator.currentRuntime()
+            val runtimeIdentity = active?.let(System::identityHashCode) ?: "none"
+            val isLogin = runCatching { active?.isLogin() }.getOrNull() ?: false
+            
             OfflineDiagnostics.record(
                 this@QmmeApp,
                 "account_logout_callback",
                 "reason=${reason ?: "unknown"} forced=${reason in forcedLogoutReasons} " +
-                        "runtimeIdentity=${active?.let(System::identityHashCode) ?: "none"} " +
-                        "isLogin=${runCatching { active?.isLogin() }.getOrNull()} " +
+                        "runtimeIdentity=$runtimeIdentity " +
+                        "isLogin=$isLogin " +
                         "hasPersistedAccount=${LoginPrefs.hasAccount(this@QmmeApp)}",
             )
+            
+            Log.w("QMME", "account: official logout reason=$reason")
+            
             if (reason !in forcedLogoutReasons) return
+            
+            // Handle specific logout reasons
+            when (reason) {
+                Constants.LogoutReason.secKicked -> {
+                    Log.e("QMME", "SECURITY KICKED - likely security signature failure or device ban")
+                    OfflineDiagnostics.record(this@QmmeApp, "logout_reason_detail", "secKicked")
+                }
+                Constants.LogoutReason.suspend -> {
+                    Log.e("QMME", "ACCOUNT SUSPENDED - account-level suspension from server")
+                    OfflineDiagnostics.record(this@QmmeApp, "logout_reason_detail", "suspend")
+                }
+                Constants.LogoutReason.expired -> {
+                    Log.w("QMME", "SESSION EXPIRED - tokens expired, should re-authenticate")
+                    OfflineDiagnostics.record(this@QmmeApp, "logout_reason_detail", "expired")
+                }
+                else -> {
+                    Log.w("QMME", "Force logout: ${reason?.name}")
+                }
+            }
+            
             RuntimeCoordinator.markLogout(
                 runtime = RuntimeCoordinator.currentRuntime(),
                 reason = "official:${reason ?: "unknown"}",
                 source = "QmmeApp.logoutCallback",
             )
             clearExpiredLoginState()
+            HeartbeatManager.stop()
             _logoutReason.value = reason
-            Log.w("QMME", "account: official logout reason=$reason")
         }
     }
 
@@ -503,6 +539,8 @@ class QmmeApp : WatchApplicationDelegate() {
         // NT AppSetting path, while the :MSF process attaches QIMEI per SSO packet
         // and supplies QIMEI16 to WtLogin. Do it before any account binding.
         initializeQimei()
+        // P1-A: Load libpow.so early so WtLogin's ClientPow can use it for T546->T547
+        rj.qmme.fix.PoWHelper.ensureLoaded()
         if (isMainProcess()) {
             // Keep MobileQQ's own cold-start lifecycle intact.  In particular, do not
             // replay LoginPrefs here: setSortAccountList()/login() during Application
