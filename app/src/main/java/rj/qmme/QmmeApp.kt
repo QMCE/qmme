@@ -37,10 +37,14 @@ import rj.qmme.data.LoginPrefs
 import rj.qmme.data.emotion.EmotionAssetBridge
 import rj.qmme.data.reporting.OfficialReportBridge
 import rj.qmme.diagnostics.OfflineDiagnostics
+import rj.qmme.fix.BridgeBugly
+import rj.qmme.fix.ConfigurationManager
+import rj.qmme.fix.DeviceLockHandler
 import rj.qmme.fix.LegacyKiller
 import rj.qmme.fix.PackageSignatureProvider
 import rj.qmme.fix.PoWHelper
 import rj.qmme.fix.SignatureProbe
+import rj.qmme.fix.TelemetryBridge
 import rj.qmme.kernel.KernelBridge
 import rj.qmme.runtime.HeartbeatManager
 import rj.qmme.runtime.RuntimeCoordinator
@@ -541,6 +545,14 @@ class QmmeApp : WatchApplicationDelegate() {
         initializeQimei()
         // P1-A: Load libpow.so early so WtLogin's ClientPow can use it for T546->T547
         rj.qmme.fix.PoWHelper.ensureLoaded()
+        // P2-A: Initialize Bugly crash reporting (official ColdStartupTask order)
+        if (isMainProcess()) {
+            BridgeBugly.init(this)
+            // P2-B: Initialize configuration manager for RDelivery/unitedconfig
+            ConfigurationManager.init(this)
+            // P2-C: Initialize telemetry bridge for native callbacks
+            TelemetryBridge.init()
+        }
         if (isMainProcess()) {
             // Keep MobileQQ's own cold-start lifecycle intact.  In particular, do not
             // replay LoginPrefs here: setSortAccountList()/login() during Application
