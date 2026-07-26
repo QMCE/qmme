@@ -39,15 +39,15 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # compileSdk 37 / build-tools 37.0.0 are not preinstalled on the
-      # runner image; install them explicitly (licenses auto-accepted).
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: >-
-            platforms;android-37
-            build-tools;37.0.0
-            platform-tools
+      # The ubuntu runner ships an Android SDK with ANDROID_HOME preset;
+      # install the exact components this project pins (compileSdk 37,
+      # build-tools 37.0.0) with the bundled sdkmanager directly instead of
+      # a third-party action.
+      - name: Install Android SDK components
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" --install "platforms;android-37" "build-tools;37.0.0" "platform-tools"
 
       # Gradle build/configuration caches. The wrapper downloads its
       # distribution from the Tencent mirror pinned in
