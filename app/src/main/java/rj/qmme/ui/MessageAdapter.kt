@@ -15,6 +15,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.imageview.ShapeableImageView
+import com.google.android.material.shape.ShapeAppearanceModel
 import com.google.android.material.textview.MaterialTextView
 import com.highcapable.betterandroid.ui.extension.component.base.getDrawableCompat
 import com.highcapable.betterandroid.ui.extension.view.textColor
@@ -127,7 +128,8 @@ class MessageAdapter(
                                 height = ViewGroup.LayoutParams.WRAP_CONTENT,
                             ),
                             init = {
-                                radius = dp(parent, 12).toFloat()
+                                // Corners are grouped-state dependent and are
+                                // assigned per bind() — see applyGroupedShape.
                                 strokeWidth = 0
                                 cardElevation = 0f
                                 isClickable = true
@@ -200,11 +202,41 @@ class MessageAdapter(
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val message = getItem(position)
         val previous = if (position > 0) getItem(position - 1) else null
-        val firstOfGroup = previous == null ||
-                previous.outgoing != message.outgoing ||
-                previous.senderUin != message.senderUin ||
-                (message.timestampSeconds - previous.timestampSeconds) > GROUP_GAP_SECONDS
-        holder.bind(message, firstOfGroup)
+        val next = if (position < itemCount - 1) getItem(position + 1) else null
+        val firstOfGroup = previous == null || !sameRun(previous, message)
+        val lastOfGroup = next == null || !sameRun(message, next)
+        holder.bind(message, firstOfGroup, lastOfGroup)
+    }
+
+    private fun sameRun(
+        earlier: ChatDetailViewModel.UiMessage,
+        later: ChatDetailViewModel.UiMessage,
+    ): Boolean = earlier.outgoing == later.outgoing &&
+            earlier.senderUin == later.senderUin &&
+            (later.timestampSeconds - earlier.timestampSeconds) <= GROUP_GAP_SECONDS
+
+    override fun onCurrentListChanged(
+        previousList: MutableList<ChatDetailViewModel.UiMessage>,
+        currentList: MutableList<ChatDetailViewModel.UiMessage>,
+    ) {
+        // Grouped corners depend on neighbours, so the rows adjacent to an
+        // insertion boundary must re-resolve even though their own content is
+        // unchanged (DiffUtil would otherwise skip them).
+        if (previousList.isEmpty() || currentList.size <= previousList.size) return
+        val appendBoundary = previousList.size - 1
+        if (appendBoundary in currentList.indices &&
+            currentList.getOrNull(appendBoundary)?.stableId ==
+            previousList.lastOrNull()?.stableId
+        ) {
+            // New messages arrived at the tail: the old tail may no longer be
+            // the last of its run.
+            notifyItemChanged(appendBoundary)
+        } else {
+            // Older history was prepended: the old head may no longer be the
+            // first of its run.
+            val prependCount = currentList.size - previousList.size
+            if (prependCount in currentList.indices) notifyItemChanged(prependCount)
+        }
     }
 
     override fun onViewRecycled(holder: Holder) {
@@ -226,10 +258,15 @@ class MessageAdapter(
         private val onImageClick: (ChatDetailViewModel.UiImage) -> Unit,
         private val onMessageLongClick: (ChatDetailViewModel.UiMessage) -> Unit,
     ) : RecyclerView.ViewHolder(itemView) {
-        fun bind(message: ChatDetailViewModel.UiMessage, firstOfGroup: Boolean) {
+        fun bind(
+            message: ChatDetailViewModel.UiMessage,
+            firstOfGroup: Boolean,
+            lastOfGroup: Boolean,
+        ) {
             val context = itemView.context
             val outgoing = message.outgoing
             val edge = if (outgoing) Gravity.END else Gravity.START
+            applyGroupedShape(outgoing, firstOfGroup, lastOfGroup)
 
             (rowContainer.layoutParams as FrameLayout.LayoutParams).apply {
                 gravity = edge
@@ -359,6 +396,38 @@ class MessageAdapter(
                 onMessageLongClick(message)
                 true
             }
+        }
+
+        /**
+         * M3 Expressive grouped-bubble corners (the Google Messages pattern):
+         * the outer corners of a run stay large while the corners facing a
+         * same-sender neighbour tighten, so a run reads as one thought.
+         */
+        private fun applyGroupedShape(
+            outgoing: Boolean,
+            firstOfGroup: Boolean,
+            lastOfGroup: Boolean,
+        ) {
+            val large = dp(18).toFloat()
+            val tight = dp(4).toFloat()
+            val top = if (firstOfGroup) large else tight
+            val bottom = if (lastOfGroup) large else tight
+            // The tightened corners sit on the sender's side of the bubble.
+            val builder = ShapeAppearanceModel.builder()
+            if (outgoing) {
+                builder
+                    .setTopLeftCornerSize(large)
+                    .setBottomLeftCornerSize(large)
+                    .setTopRightCornerSize(top)
+                    .setBottomRightCornerSize(bottom)
+            } else {
+                builder
+                    .setTopRightCornerSize(large)
+                    .setBottomRightCornerSize(large)
+                    .setTopLeftCornerSize(top)
+                    .setBottomLeftCornerSize(bottom)
+            }
+            card.shapeAppearanceModel = builder.build()
         }
 
         fun unbind() {

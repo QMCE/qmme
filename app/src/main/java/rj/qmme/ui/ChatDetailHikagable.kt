@@ -1,22 +1,17 @@
 package rj.qmme.ui
 
-import android.animation.Animator
-import android.animation.AnimatorListenerAdapter
-import android.animation.ValueAnimator
 import android.content.Context
 import android.content.res.ColorStateList
-import android.graphics.Color
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.AccelerateInterpolator
-import android.view.animation.DecelerateInterpolator
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.core.widget.TextViewCompat
+import androidx.dynamicanimation.animation.SpringAnimation
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -46,7 +41,6 @@ import com.highcapable.hikage.widget.android.widget.LinearLayout
 import com.highcapable.hikage.widget.androidx.recyclerview.widget.RecyclerView
 import com.highcapable.hikage.widget.androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.highcapable.hikage.widget.com.google.android.material.appbar.MaterialToolbar
-import com.highcapable.hikage.widget.com.google.android.material.button.MaterialButton
 import com.highcapable.hikage.widget.com.google.android.material.card.MaterialCardView
 import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView
 import com.highcapable.hikage.widget.com.google.android.material.progressindicator.CircularProgressIndicator
@@ -54,6 +48,9 @@ import com.highcapable.hikage.widget.com.google.android.material.textview.Materi
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import rj.qmme.R
+import rj.qmme.ui.hikage.FilledIconButton
+import rj.qmme.ui.hikage.IconButton
+import rj.qmme.ui.hikage.TonalIconButton
 import rj.qmme.viewmodel.ChatDetailViewModel
 import com.highcapable.hikage.annotation.Hikagable
 
@@ -77,7 +74,7 @@ class ChatDetailHikagable(
     private lateinit var sendButton: MaterialButton
     private lateinit var attachmentPanel: View
     private var panelOpen = false
-    private var panelAnimator: ValueAnimator? = null
+    private var panelAnimator: SpringAnimation? = null
     private var messageActionHandler: ((ChatDetailViewModel.UiMessage) -> Unit)? = null
     private val adapter = MessageAdapter(
         isGroup = target.chatType == 2,
@@ -198,6 +195,7 @@ class ChatDetailHikagable(
         ) {
             swipeRefresh = SwipeRefreshLayout(
                 lparams = LayoutParams(matchParent = true),
+                init = { applyM3Colors(this) },
             ) {
                 recyclerView = RecyclerView(
                     lparams = LayoutParams(matchParent = true),
@@ -284,27 +282,15 @@ class ChatDetailHikagable(
                     setPadding(dp(6), dp(6), dp(6), dp(6))
                 },
             ) {
-                imageButton = MaterialButton(
+                // Standard (transparent) icon button — the style already
+                // tints to colorOnSurfaceVariant and morphs on press.
+                imageButton = IconButton(
                     lparams = LayoutParams(width = dp(48), height = dp(48)) {
                         gravity = Gravity.BOTTOM
                     },
                     init = {
                         icon = drawableResource(R.drawable.ic_add)
-                        iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
-                        iconPadding = 0
-                        text = ""
-                        minWidth = 0
-                        minimumWidth = 0
-                        insetTop = 0
-                        insetBottom = 0
                         contentDescription = "更多"
-                        backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
-                        iconTint = ColorStateList.valueOf(
-                            MaterialColors.getColor(
-                                this,
-                                com.google.android.material.R.attr.colorOnSurfaceVariant,
-                            ),
-                        )
                         setOnClickListener { toggleAttachmentPanel() }
                     },
                 )
@@ -345,21 +331,16 @@ class ChatDetailHikagable(
                         setOnClickListener { hideAttachmentPanel() }
                     },
                 )
-                sendButton = MaterialButton(
+                // Filled icon button: the M3 Expressive style supplies the
+                // pressed shape morph and the 48dp target, so no manual
+                // corner radius / inset squashing is needed.
+                sendButton = FilledIconButton(
                     lparams = LayoutParams(width = dp(48), height = dp(48)) {
-                        leftMargin = dp(4)
+                        marginStart = dp(4)
                         gravity = Gravity.BOTTOM
                     },
                     init = {
                         icon = drawableResource(R.drawable.ic_send)
-                        iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
-                        iconPadding = 0
-                        text = ""
-                        minWidth = 0
-                        minimumWidth = 0
-                        insetTop = 0
-                        insetBottom = 0
-                        cornerRadius = dp(24)
                         contentDescription = "发送"
                         setOnClickListener { performSend() }
                     },
@@ -394,33 +375,13 @@ class ChatDetailHikagable(
                     gravity = Gravity.CENTER_HORIZONTAL
                 },
             ) {
-                MaterialButton(
+                TonalIconButton(
                     lparams = LayoutParams(width = dp(56), height = dp(56)) {
                         gravity = Gravity.CENTER_HORIZONTAL
                     },
                     init = {
                         icon = drawableResource(R.drawable.ic_image)
-                        iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
-                        iconPadding = 0
-                        text = ""
-                        minWidth = 0
-                        minimumWidth = 0
-                        insetTop = 0
-                        insetBottom = 0
-                        cornerRadius = dp(28)
                         contentDescription = "相册"
-                        backgroundTintList = ColorStateList.valueOf(
-                            MaterialColors.getColor(
-                                this,
-                                com.google.android.material.R.attr.colorSurfaceContainerHigh,
-                            ),
-                        )
-                        iconTint = ColorStateList.valueOf(
-                            MaterialColors.getColor(
-                                this,
-                                com.google.android.material.R.attr.colorOnSurface,
-                            ),
-                        )
                         setOnClickListener {
                             hideAttachmentPanel()
                             onPickImage()
@@ -483,29 +444,18 @@ class ChatDetailHikagable(
         val endHeight = if (show) fullHeight else 0
         if (show) panel.visibility = View.VISIBLE
 
-        var canceled = false
-        panelAnimator = ValueAnimator.ofInt(startHeight, endHeight).apply {
-            duration = if (show) 220L else 180L
-            interpolator = if (show) DecelerateInterpolator(1.4f) else AccelerateInterpolator(1.4f)
-            addUpdateListener { animation ->
-                val params = panel.layoutParams
-                params.height = animation.animatedValue as Int
-                panel.layoutParams = params
-            }
-            addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationCancel(animation: Animator) {
-                    canceled = true
-                }
-
-                override fun onAnimationEnd(animation: Animator) {
-                    if (canceled) return
-                    val params = panel.layoutParams
-                    params.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                    panel.layoutParams = params
-                    if (!show) panel.visibility = View.GONE
-                }
-            })
-            start()
+        // M3 Expressive motion is spring-based; the theme's fast spatial token
+        // is the one meant for small container reveals like this panel.
+        panelAnimator = Motion.animateHeight(
+            view = panel,
+            from = startHeight,
+            to = endHeight,
+            force = Motion.fastSpatial(context),
+        ) {
+            val params = panel.layoutParams
+            params.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            panel.layoutParams = params
+            if (!show) panel.visibility = View.GONE
         }
     }
 
@@ -584,12 +534,10 @@ class ChatDetailHikagable(
         viewModel: ChatDetailViewModel,
         message: ChatDetailViewModel.UiMessage,
     ) {
-        data class Action(val label: String, val run: () -> Unit)
-
         val actions = buildList {
             if (message.text.isNotBlank()) {
                 add(
-                    Action("复制") {
+                    MessageActionSheet.Action("复制", R.drawable.ic_copy) {
                         val clipboard = context.clipboardManager
                         clipboard.copy(message.text, "QQ 消息")
                         context.toast("已复制消息")
@@ -598,7 +546,7 @@ class ChatDetailHikagable(
             }
             if (message.outgoing && message.messageId > 0L) {
                 add(
-                    Action("撤回") {
+                    MessageActionSheet.Action("撤回", R.drawable.ic_undo, destructive = true) {
                         MaterialAlertDialogBuilder(context)
                             .setTitle("撤回这条消息？")
                             .setMessage("撤回后，聊天中的其他人将无法继续看到原消息。")
@@ -610,7 +558,7 @@ class ChatDetailHikagable(
             }
             if (message.messageId > 0L) {
                 add(
-                    Action("删除") {
+                    MessageActionSheet.Action("删除", R.drawable.ic_delete, destructive = true) {
                         MaterialAlertDialogBuilder(context)
                             .setTitle("删除这条消息？")
                             .setMessage("只会从当前聊天记录中删除，无法撤回对方已经收到的内容。")
@@ -623,16 +571,15 @@ class ChatDetailHikagable(
             if (message.outgoing && message.messageId > 0L &&
                 message.sendStatus != 0 && message.sendStatus != 2
             ) {
-                add(Action("重发") { viewModel.resendMessage(message) })
+                add(
+                    MessageActionSheet.Action("重发", R.drawable.ic_refresh) {
+                        viewModel.resendMessage(message)
+                    },
+                )
             }
         }
-        if (actions.isEmpty()) return
-        MaterialAlertDialogBuilder(context)
-            .setTitle("消息操作")
-            .setItems(actions.map(Action::label).toTypedArray()) { _, which ->
-                actions.getOrNull(which)?.run?.invoke()
-            }
-            .show()
+        // Segmented-list bottom sheet, not a centered dialog menu.
+        MessageActionSheet.show(context, actions)
     }
 
     private fun performSend() {

@@ -172,14 +172,8 @@ class ContactsAdapter(
                         // shape states. Removing default content padding lets the
                         // divider travel across the entire visual card.
                         setContentPadding(0, 0, 0, 0)
-                        // Dynamic M3 surface-container color makes the full
-                        // first/middle/last run read as one grouped card.
-                        setCardBackgroundColor(
-                            MaterialColors.getColor(
-                                this,
-                                android.R.attr.colorBackground,
-                            ),
-                        )
+                        // Background color is intentionally left to the segmented
+                        // style's state selector — see ConversationAdapter.
                         isClickable = true
                         isFocusable = true
                         isSwipeEnabled = false

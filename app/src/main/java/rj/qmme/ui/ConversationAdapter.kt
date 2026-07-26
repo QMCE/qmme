@@ -32,6 +32,7 @@ import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import rj.qmme.R
 import rj.qmme.viewmodel.ChatListViewModel
 import java.text.DateFormat
+import java.util.Calendar
 import java.util.Date
 import rj.qmme.ui.hikage.ListItemLayout as HListItemLayout
 import rj.qmme.ui.hikage.SegmentedListItemCardView as HSegmentedListItemCardView
@@ -69,14 +70,11 @@ class ConversationAdapter(
                     lparams = LayoutParams(matchParent = true),
                     init = {
                         setContentPadding(0, 0, 0, 0)
-                        // Dynamic M3 surface-container color makes the full
-                        // first/middle/last run read as one grouped card.
-                        setCardBackgroundColor(
-                            MaterialColors.getColor(
-                                this,
-                                android.R.attr.colorBackground,
-                            ),
-                        )
+                        // Do NOT override cardBackgroundColor here. The segmented
+                        // style already resolves to a state-aware selector
+                        // (m3_segmented_list_item_background_color_selector) whose
+                        // default is ?attr/colorSurface. Setting a flat color
+                        // silently discards the checked / swiped state colors.
                         isClickable = true
                         isFocusable = true
                         isSwipeEnabled = false
@@ -188,9 +186,12 @@ class ConversationAdapter(
                                             com.google.android.material.R.style.TextAppearance_Material3_LabelSmall,
                                         )
                                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                                        // M3 badges are error-colored; the previous
+                                        // primaryContainer pair was too low-contrast
+                                        // to read as an alert at 10sp.
                                         textColor = MaterialColors.getColor(
                                             this,
-                                            com.google.android.material.R.attr.colorOnPrimaryContainer,
+                                            com.google.android.material.R.attr.colorOnError,
                                         )
                                         gravity = Gravity.CENTER
                                         isSingleLine = true
@@ -206,7 +207,7 @@ class ConversationAdapter(
                                             fillColor = ColorStateList.valueOf(
                                                 MaterialColors.getColor(
                                                     this@MaterialTextView,
-                                                    com.google.android.material.R.attr.colorPrimaryContainer,
+                                                    androidx.appcompat.R.attr.colorError,
                                                 ),
                                             )
                                         }
@@ -317,13 +318,40 @@ class ConversationAdapter(
 
     private fun Long?.orZero(): Long = this ?: 0L
 
+    /**
+     * IM-convention timestamps: today -> clock time, yesterday -> "昨天",
+     * this week -> weekday, older -> date. A raw clock time on a week-old
+     * conversation reads as noise.
+     */
     private fun formatTime(timestamp: Long): String {
         if (timestamp <= 0L) return ""
         val millis = if (timestamp < 10_000_000_000L) timestamp * 1000L else timestamp
-        return DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(millis))
+        val then = Calendar.getInstance().apply { timeInMillis = millis }
+        val now = Calendar.getInstance()
+
+        fun Calendar.startOfDay(): Long = (clone() as Calendar).run {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            timeInMillis
+        }
+        val dayDiff = ((now.startOfDay() - then.startOfDay()) / MILLIS_PER_DAY).toInt()
+
+        return when {
+            dayDiff <= 0 -> DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(millis))
+            dayDiff == 1 -> "昨天"
+            dayDiff < 7 -> WEEKDAYS[then.get(Calendar.DAY_OF_WEEK) - 1]
+            then.get(Calendar.YEAR) == now.get(Calendar.YEAR) ->
+                "${then.get(Calendar.MONTH) + 1}月${then.get(Calendar.DAY_OF_MONTH)}日"
+            else ->
+                "${then.get(Calendar.YEAR)}/${then.get(Calendar.MONTH) + 1}/${then.get(Calendar.DAY_OF_MONTH)}"
+        }
     }
 
     private companion object {
         const val MAX_COMPACT_UNREAD_COUNT = 99L
+        const val MILLIS_PER_DAY = 86_400_000L
+        val WEEKDAYS = arrayOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
     }
 }
