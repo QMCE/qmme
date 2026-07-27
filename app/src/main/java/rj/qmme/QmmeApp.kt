@@ -539,20 +539,36 @@ class QmmeApp : WatchApplicationDelegate() {
         SignatureProbe.dump(this)
         // Kept idempotent for warm-starts and vendor process recreation.
         initializeQmmkv()
-        // QIMEI must be initialized in EVERY process: the main process feeds the
-        // NT AppSetting path, while the :MSF process attaches QIMEI per SSO packet
-        // and supplies QIMEI16 to WtLogin. Do it before any account binding.
-        initializeQimei()
-        // P1-A: Load libpow.so early so WtLogin's ClientPow can use it for T546->T547
-        rj.qmme.fix.PoWHelper.ensureLoaded()
-        // P2-A: Initialize Bugly crash reporting (official ColdStartupTask order)
+        // CRITICAL: Initialize official startup director to complete the full 
+        // ColdStartupTask chain which includes KernelInitTask that initializes
+        // all native services including MsgService, BuddyService, GroupService, etc.
+        // This is why message list fails to load - msg service never got native handle.
         if (isMainProcess()) {
+            // Call official NtStartupDirector.a(context, "application") 
+            // to execute the complete task chain in correct order
+            try {
+                val directorClass = Class.forName("com.tencent.qqnt.watch.startup.director.NtStartupDirector")
+                val aMethod = directorClass.getMethod("a", android.content.Context::class.java, String::class.java)
+                
+                // Set context like official does - set sMobileQQ and this instance
+                directorClass.getDeclaredField("c").apply { isAccessible = true }.set(null, this)
+                mqq.app.MobileQQ.sMobileQQ = this
+                
+                // Execute the ApplicationCreate task chain
+                aMethod.invoke(null, this, "application")
+                Log.i("QMME", "NtStartupDirector initialized successfully - message service should now work")
+            } catch (e: Exception) {
+                Log.e("QMME", "Failed to call NtStartupDirector, message service may not be initialized", e)
+            }
+            
+            // Then proceed with our custom initializations that run AFTER official tasks
             BridgeBugly.init(this)
-            // P2-B: Initialize configuration manager for RDelivery/unitedconfig
             ConfigurationManager.init(this)
-            // P2-C: Initialize telemetry bridge for native callbacks
             TelemetryBridge.init()
         }
+        // These must run in EVERY process for proper device fingerprinting
+        initializeQimei()
+        rj.qmme.fix.PoWHelper.ensureLoaded()
         if (isMainProcess()) {
             // Keep MobileQQ's own cold-start lifecycle intact.  In particular, do not
             // replay LoginPrefs here: setSortAccountList()/login() during Application
