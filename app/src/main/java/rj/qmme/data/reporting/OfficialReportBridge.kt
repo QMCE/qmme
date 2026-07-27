@@ -95,4 +95,13 @@ object OfficialReportBridge {
 
     private fun unwrap(error: Throwable): Throwable =
         (error as? InvocationTargetException)?.targetException ?: error
+    
+    // Stub methods for TelemetryBridge compatibility
+    fun report(key: String, value: String) {
+        Log.v(TAG, "Telemetry stub: $key=$value")
+    }
+    
+    fun flush() {
+        Log.v(TAG, "Telemetry flushed (stub)")
+    }
 }

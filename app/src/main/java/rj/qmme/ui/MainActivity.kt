@@ -1,5 +1,7 @@
 package rj.qmme.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
@@ -9,6 +11,7 @@ import com.google.android.material.transition.MaterialContainerTransform
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.repeatOnLifecycle
@@ -37,6 +40,14 @@ class MainActivity : AppCompatActivity() {
             if (uri != null && viewModel != null) viewModel.sendImage(this, uri)
         }
 
+    // READ_PHONE_STATE feeds the QIMEI/Beacon device fingerprint. Request it before
+    // login so QQBeaconPrivateInfo can read the device identifier; without it QIMEI
+    // registration fails and the server instantly kicks the session.
+    private val phoneStatePermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            Log.i("QMME", "READ_PHONE_STATE permission granted=$granted")
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -44,8 +55,27 @@ class MainActivity : AppCompatActivity() {
         setContentView(screenHost)
         navigator = ViewNavigator(this, screenHost)
         observeOfficialLogout()
+        ensurePhoneStatePermission()
 
         LoginPrefs.loadAccount(this)?.let(::showLoggedIn) ?: showLogin()
+    }
+
+    /**
+     * Request READ_PHONE_STATE at runtime. This dangerous permission gates the
+     * device identifier the QIMEI/Beacon SDK needs to register a stable device
+     * fingerprint with the backend. Requested early (before login) so the
+     * fingerprint is ready by the time WtLogin/MSF attach QIMEI to SSO packets.
+     */
+    private fun ensurePhoneStatePermission() {
+        val alreadyGranted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.READ_PHONE_STATE,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (alreadyGranted) {
+            Log.d("QMME", "READ_PHONE_STATE already granted")
+            return
+        }
+        phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
     }
 
     /** Mirrors the official logout reason observer using the native lifecycle. */

@@ -758,12 +758,57 @@ class QmmeApp : WatchApplicationDelegate() {
             .onFailure { Log.d("QMME", "libqimei preload skipped: ${it.message}") }
         // Mark privacy policy as accepted so Qqimei.b(false) proceeds like official.
         ensurePrivacyPolicyAccepted()
+        // CRITICAL: Beacon SDK MUST be initialized BEFORE QIMEI (official order:
+        // BeaconSDKInitTask -> MiscInitTask). QIMEI generation depends on Beacon's
+        // network registration; if Beacon isn't ready, QIMEI stays null and the
+        // server rejects the device (isSameDevice=false -> instant kick).
+        ensureBeaconInitialized()
         runCatching {
             // Match official MiscInitTask: Qqimei.b(false)
             com.tencent.mobileqq.statistics.Qqimei.b(false)
             val qimei36 = com.tencent.mobileqq.statistics.Qqimei.a()
             Log.d("QMME", "QIMEI init done qimei36Len=${qimei36?.length ?: 0}")
         }.onFailure { Log.w("QMME", "QIMEI init failed", it) }
+    }
+
+    /**
+     * Initialize the Beacon SDK (QQBeaconReport.d("")) exactly like the official
+     * BeaconSDKInitTask, which runs immediately BEFORE MiscInitTask(QIMEI) in the
+     * cold-start chain. QIMEI36/16 are minted by the Beacon backend during its
+     * network registration; without Beacon first, Qqimei.b() sees "QM is null,
+     * register qm failed" and the device fingerprint never materializes.
+     */
+    private fun ensureBeaconInitialized() {
+        // Force a fresh OAID fetch. QQBeaconPrivateInfo skips getOAIDAsync when
+        // "key_oaid_last_update_time" is <24h old ("getOAIDAsync not call"); a stale
+        // timestamp from a prior failed registration leaves OAID (and thus QIMEI)
+        // empty forever. Reset it to 0 so the VendorManager OAID fetch runs and the
+        // device fingerprint can be minted.
+        resetOaidFetchTimestamp()
+        runCatching {
+            // QQBeaconReport.d(appVersion) — official passes "" (empty version).
+            val reportClass = Class.forName("com.tencent.mobileqq.statistics.QQBeaconReport")
+            reportClass.getMethod("d", String::class.java).invoke(null, "")
+            Log.i("QMME", "Beacon SDK initialized before QIMEI (official order)")
+        }.onFailure { Log.w("QMME", "Beacon SDK init failed", it) }
+    }
+
+    /**
+     * Zero out "common_mmkv_configurations"/"key_oaid_last_update_time" so
+     * QQBeaconPrivateInfo re-runs the VendorManager OAID fetch instead of taking
+     * the "<24h -> getOAIDAsync not call" shortcut. Needed because a prior failed
+     * QIMEI registration can persist the timestamp while leaving QIMEI empty.
+     */
+    private fun resetOaidFetchTimestamp() {
+        runCatching {
+            val entity = com.tencent.mobileqq.qmmkv.QMMKV.a(this, "common_mmkv_configurations")
+            if (entity == null) {
+                Log.w("QMME", "resetOaidFetchTimestamp: MMKV entity null")
+                return
+            }
+            entity.u("key_oaid_last_update_time", 0L)
+            Log.i("QMME", "reset key_oaid_last_update_time=0 to force OAID fetch")
+        }.onFailure { Log.w("QMME", "resetOaidFetchTimestamp failed", it) }
     }
 
     /**
