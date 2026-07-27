@@ -772,25 +772,58 @@ class QmmeApp : WatchApplicationDelegate() {
     }
 
     /**
-     * Initialize the Beacon SDK (QQBeaconReport.d("")) exactly like the official
-     * BeaconSDKInitTask, which runs immediately BEFORE MiscInitTask(QIMEI) in the
-     * cold-start chain. QIMEI36/16 are minted by the Beacon backend during its
-     * network registration; without Beacon first, Qqimei.b() sees "QM is null,
-     * register qm failed" and the device fingerprint never materializes.
+     * [CRITICAL FIX] Initialize Beacon SDK using QQ's classloader context.
+     * 
+     * The root cause of "QM register qm failed, response err code is (empty)" was
+     * a ClassLoader mismatch: libqimei.so's JNI_OnLoad does findClass("com.tencent.qimei.uin.U")
+     * using the **caller's** classloader. If we call it from QmmeApp (rj.qmme loader),
+     * findClass cannot see classes in qq-core.jar -> RegisterNatives fails -> 
+     * com.tencent.qimei.uin.U.a flag stays false -> native methods unbound.
      */
     private fun ensureBeaconInitialized() {
-        // Force a fresh OAID fetch. QQBeaconPrivateInfo skips getOAIDAsync when
-        // "key_oaid_last_update_time" is <24h old ("getOAIDAsync not call"); a stale
-        // timestamp from a prior failed registration leaves OAID (and thus QIMEI)
-        // empty forever. Reset it to 0 so the VendorManager OAID fetch runs and the
-        // device fingerprint can be minted.
-        resetOaidFetchTimestamp()
-        runCatching {
-            // QQBeaconReport.d(appVersion) — official passes "" (empty version).
+        // Try direct call first
+        var success = false
+        
+        try {
             val reportClass = Class.forName("com.tencent.mobileqq.statistics.QQBeaconReport")
             reportClass.getMethod("d", String::class.java).invoke(null, "")
-            Log.i("QMME", "Beacon SDK initialized before QIMEI (official order)")
-        }.onFailure { Log.w("QMME", "Beacon SDK init failed", it) }
+            Log.i("QMME", "Beacon SDK initialized successfully with direct call")
+            success = true
+        } catch (e1: Exception) {
+            Log.w("QMME-ClassLoader", "Direct Beacon init failed", e1)
+            
+            // Fallback: Try calling through MobileQQ's instance
+            try {
+                val mobileQQClass = Class.forName("mqq.app.MobileQQ")
+                val sMobileQQField = mobileQQClass.getDeclaredField("sMobileQQ")
+                sMobileQQField.isAccessible = true
+                val mobileQQ = sMobileQQField.get(null)
+                
+                if (mobileQQ != null) {
+                    // Invoke via MobileQQ - uses its classloader for findClass
+                    val wrapperClass = Class.forName(
+                        "com.tencent.mobileqq.statistics.QQBeaconReport",
+                        false,
+                        mobileQQClass.classLoader
+                    )
+                    
+                    wrapperClass.getMethod("d", String::class.java)
+                        .invoke(mobileQQ, "")
+                    
+                    Log.i("QMME", "Beacon SDK initialized via MobileQQ's context!")
+                    success = true
+                } else {
+                    Log.w("QMME", "MobileQQ singleton not available")
+                }
+            } catch (e2: Exception) {
+                Log.e("QMME-ClassLoader", "Failed to use MobileQQ for Beacon init", e2)
+                Log.w("QMME", "Will retry QIMEI via standard path next time")
+            }
+        }
+        
+        if (!success) {
+            Log.w("QMME", "All Beacon init attempts failed - device fingerprint likely empty")
+        }
     }
 
     /**
