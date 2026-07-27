@@ -1,6 +1,8 @@
 <resources>
     <!-- Keep the night variant on the same dynamic M3 Expressive theme. -->
     <style name="Theme.QMME" parent="Theme.Material3Expressive.DynamicColors.DayNight.NoActionBar">
+        <item name="android:textColorPrimary">?attr/colorOnSurface</item>
+        <item name="android:textColorSecondary">?attr/colorOnSurfaceVariant</item>
         <item name="listItemShapeAppearanceFirst">@style/ShapeAppearance.QMME.ListItem.First</item>
         <item name="listItemShapeAppearanceMiddle">@style/ShapeAppearance.QMME.ListItem.Middle</item>
         <item name="listItemShapeAppearanceLast">@style/ShapeAppearance.QMME.ListItem.Last</item>

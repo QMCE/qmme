@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import androidx.core.graphics.ColorUtils
 import androidx.core.widget.NestedScrollView
 import androidx.core.widget.TextViewCompat
 import androidx.lifecycle.Lifecycle
@@ -305,39 +306,40 @@ class MainHikagable(
                             init = {
                                 title = "消息"
                                 subtitle = onlineSubtitle()
+                                // Emphasized large title; color is baked into the
+                                // QMME TextAppearance so AppCompat's washed
+                                // textColorPrimary cannot leak in.
                                 setExpandedTitleTextAppearance(
-                                    com.google.android.material.R.style.TextAppearance_Material3_HeadlineMedium_Emphasized,
+                                    R.style.TextAppearance_QMME_CollapsingToolbar_ExpandedTitle,
                                 )
-                                // setExpandedTitleTextAppearance() re-reads the
-                                // appearance's own android:textColor, which every
-                                // TextAppearance.Material3.* inherits from
-                                // AppCompat as ?android:textColorPrimary. That
-                                // silently replaces the app bar's expandedTitleTextColor
-                                // (colorOnSurface) with whatever the platform —
-                                // or an OEM overlay — has textColorPrimary set to,
-                                // which is why only the expanded title washed out
-                                // while the collapsed one stayed correct. Re-pin
-                                // the M3 tokens after the appearance.
+                                setExpandedSubtitleTextAppearance(
+                                    R.style.TextAppearance_QMME_CollapsingToolbar_ExpandedSubtitle,
+                                )
+                                // Belt-and-suspenders: setExpanded*TextAppearance()
+                                // always re-reads android:textColor from the
+                                // appearance. Re-pin opaque M3 tokens afterwards
+                                // so the expanded title never paints at ~87% black
+                                // (#DE000000) while the collapsed title stays correct.
                                 setExpandedTitleColor(
-                                    MaterialColors.getColor(
+                                    opaqueMaterialColor(
                                         this,
                                         com.google.android.material.R.attr.colorOnSurface,
                                     ),
                                 )
                                 setCollapsedTitleTextColor(
-                                    MaterialColors.getColor(
+                                    opaqueMaterialColor(
                                         this,
                                         com.google.android.material.R.attr.colorOnSurface,
                                     ),
                                 )
                                 setExpandedSubtitleColor(
-                                    MaterialColors.getColor(
+                                    opaqueMaterialColor(
                                         this,
                                         com.google.android.material.R.attr.colorOnSurfaceVariant,
                                     ),
                                 )
                                 setCollapsedSubtitleTextColor(
-                                    MaterialColors.getColor(
+                                    opaqueMaterialColor(
                                         this,
                                         com.google.android.material.R.attr.colorOnSurfaceVariant,
                                     ),
@@ -829,6 +831,10 @@ class MainHikagable(
 
     private fun dp(value: Int): Int =
         (value * context.resources.displayMetrics.density).toInt()
+
+    /** Resolves an M3 color attr and forces full opacity (no washed 87% alpha). */
+    private fun opaqueMaterialColor(view: View, colorAttr: Int): Int =
+        ColorUtils.setAlphaComponent(MaterialColors.getColor(view, colorAttr), 0xFF)
 
     companion object {
         private const val PAGE_CHAT = 1
