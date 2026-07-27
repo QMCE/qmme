@@ -2,6 +2,17 @@
     <!-- Material 3 is the source of truth for colors, typography and component states. -->
     <style name="Theme.QMME" parent="Theme.Material3Expressive.DynamicColors.DayNight.NoActionBar">
         <!--
+          AppCompat TextAppearances inherit ?android:textColorPrimary. Platform /
+          OEM overlays (and AppCompat's own #DE000000 high-emphasis token) can
+          make that resolve to a washed 87%-black, which CollapsingToolbarLayout
+          then paints as the expanded large title. Pin both primary/secondary
+          text attrs to opaque M3 on-surface tokens so appearance-driven title
+          colors stay fully contrasted.
+        -->
+        <item name="android:textColorPrimary">?attr/colorOnSurface</item>
+        <item name="android:textColorSecondary">?attr/colorOnSurfaceVariant</item>
+
+        <!--
           Keep the official M3 ListItemLayout grouping behavior, but square the
           *inner* corners. First/last retain their outer M3 large corners, so a
           segmented group reads as one card divided by MaterialDivider instead
@@ -10,6 +21,21 @@
         <item name="listItemShapeAppearanceFirst">@style/ShapeAppearance.QMME.ListItem.First</item>
         <item name="listItemShapeAppearanceMiddle">@style/ShapeAppearance.QMME.ListItem.Middle</item>
         <item name="listItemShapeAppearanceLast">@style/ShapeAppearance.QMME.ListItem.Last</item>
+    </style>
+
+    <!--
+      Emphasized large title used by the home flexible app bar. Bakes in
+      colorOnSurface so setExpandedTitleTextAppearance() cannot reintroduce a
+      washed textColorPrimary from the AppCompat parent chain.
+    -->
+    <style name="TextAppearance.QMME.CollapsingToolbar.ExpandedTitle"
+        parent="TextAppearance.Material3.HeadlineMedium.Emphasized">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <style name="TextAppearance.QMME.CollapsingToolbar.ExpandedSubtitle"
+        parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
     </style>
 
     <style name="ShapeAppearance.QMME.ListItem.First" parent="">
