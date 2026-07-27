@@ -773,16 +773,43 @@ class QmmeApp : WatchApplicationDelegate() {
      * lets the stock QIMEI/telemetry init paths run unmodified.
      */
     private fun ensurePrivacyPolicyAccepted() {
-        runCatching {
+        try {
             val helperClass = Class.forName("com.tencent.mobileqq.app.privacy.PrivacyPolicyHelper")
-            // Fast path: already accepted (cached static field a == true).
-            if (runCatching { helperClass.getMethod("a").invoke(null) as? Boolean }.getOrNull() == true) {
+            // Check current status first
+            val currentState = runCatching { 
+                helperClass.getMethod("a").invoke(null) as? Boolean 
+            }.getOrNull() ?: false
+            
+            Log.d("QMME", "PrivacyPolicyHelper state before: $currentState")
+            
+            if (currentState == true) {
+                Log.d("QMME", "privacy policy already accepted, skipping")
                 return
             }
+            
             val entity = com.tencent.mobileqq.qmmkv.QMMKV.a(this, "common_mmkv_configurations")
-            entity.v("privacypolicy_state", "1")
-            Log.d("QMME", "privacy policy state set to accepted")
-        }.onFailure { Log.w("QMME", "ensurePrivacyPolicyAccepted failed", it) }
+            if (entity == null) {
+                Log.e("QMME", "QMMKV entity for 'common_mmkv_configurations' is NULL!")
+                return
+            }
+            
+            val result = entity.v("privacypolicy_state", "1")
+            Log.d("QMME", "set privacypolicy_state='1', returned: ${result?.javaClass?.simpleName ?: "null"}")
+            
+            // Verify the write
+            val verifyValue = entity.o("privacypolicy_state", "")
+            Log.d("QMME", "verify privacypolicy_state value: '$verifyValue'")
+            
+            if (verifyValue == "1") {
+                Log.i("QMME", "✓ Privacy policy state successfully set to '1'")
+            } else {
+                Log.e("QMME", "✗ Privacy policy state verification FAILED: expected '1', got '$verifyValue'")
+            }
+            
+        } catch (e: Exception) {
+            Log.e("QMME", "ensurePrivacyPolicyAccepted failed", e)
+            e.printStackTrace()
+        }
     }
 
     private fun isMsfProcess(): Boolean {
