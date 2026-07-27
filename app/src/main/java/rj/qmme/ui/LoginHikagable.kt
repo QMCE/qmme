@@ -10,6 +10,8 @@ import androidx.core.widget.TextViewCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.transition.TransitionManager
+import com.google.android.material.transition.MaterialFadeThrough
 import com.highcapable.betterandroid.ui.extension.component.launch
 import com.highcapable.hikage.core.Hikage
 import com.highcapable.hikage.core.base.Hikagable
@@ -239,8 +241,10 @@ class LoginHikagable(
         }
         val ready = qrBitmap != null && loginUiState !is AuthViewModel.LoginUiState.Error
                 && loginUiState !is AuthViewModel.LoginUiState.Expired
-        image.visibility = if (ready) View.VISIBLE else View.GONE
-        progress.visibility = if (ready || !busy) View.GONE else View.VISIBLE
+        // The QR arriving is the payoff moment of onboarding; it fades in
+        // instead of snapping over the loader.
+        Motion.fadeVisibility(image, visible = ready)
+        Motion.fadeVisibility(progress, visible = !ready && busy)
         retry.isEnabled = !busy && (ready || loginUiState is AuthViewModel.LoginUiState.Error
                 || loginUiState is AuthViewModel.LoginUiState.Expired)
     }
@@ -278,6 +282,12 @@ class LoginHikagable(
     }
 
     private fun replaceContent(screen: Hikage) {
+        // Onboarding steps are sibling destinations, so they change with the
+        // same fade-through the bottom navigation uses — not a hard swap.
+        // Guarded on attachment: the first step mounts during tree build.
+        if (contentRoot.isAttachedToWindow) {
+            TransitionManager.beginDelayedTransition(contentRoot, MaterialFadeThrough())
+        }
         contentRoot.removeAllViews()
         // hikage-extension 1.1.1 exposes the ViewGroup overload only to Java;
         // mount the already-built Hikage tree without introducing a wrapper View.

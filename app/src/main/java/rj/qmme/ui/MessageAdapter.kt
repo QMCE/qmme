@@ -28,6 +28,7 @@ import com.highcapable.hikage.widget.com.google.android.material.imageview.Shape
 import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView
 import rj.qmme.R
 import rj.qmme.viewmodel.ChatDetailViewModel
+import java.util.Calendar
 import java.util.Date
 
 /** Material 3 Expressive message rows: grouped by sender, list-flavored, time on the meta row. */
@@ -334,7 +335,10 @@ class MessageAdapter(
                 )
                 time.text = buildString {
                     val millis = message.timestampSeconds * 1000L
-                    if (millis > 0L) append(DateFormat.getTimeFormat(context).format(Date(millis)))
+                    // A freshly loaded history spans days, and a bare clock time
+                    // on yesterday's messages reads as today's. Same convention
+                    // as the conversation feed: 昨天/weekday/date prefix.
+                    if (millis > 0L) append(formatMessageTime(context, millis))
                     if (sending) {
                         if (isNotEmpty()) append("  ·  ")
                         append("发送中")
@@ -379,6 +383,13 @@ class MessageAdapter(
                     fallback = null,
                     circular = false,
                 )
+                // bind() resets the shape to sharp rectangles synchronously
+                // before returning, so this override always lands after it. A
+                // hard-cornered photo inside an 18dp-radius bubble looks pasted
+                // on; the small M3 corner keeps it part of the bubble.
+                image.shapeAppearanceModel = ShapeAppearanceModel.builder()
+                    .setAllCornerSizes(dp(8).toFloat())
+                    .build()
                 image.setOnClickListener { onImageClick(picture, image) }
             }
             body.text = message.text
@@ -454,6 +465,36 @@ class MessageAdapter(
 
     private companion object {
         const val GROUP_GAP_SECONDS = 300L
+        const val MILLIS_PER_DAY = 86_400_000L
+        val WEEKDAYS = arrayOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
+
+        /** Clock time for today; 昨天/weekday/date-prefixed clock time otherwise. */
+        fun formatMessageTime(context: android.content.Context, millis: Long): String {
+            val clock = DateFormat.getTimeFormat(context).format(Date(millis))
+            val then = Calendar.getInstance().apply { timeInMillis = millis }
+            val now = Calendar.getInstance()
+
+            fun Calendar.startOfDay(): Long = (clone() as Calendar).run {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+                timeInMillis
+            }
+            val dayDiff = ((now.startOfDay() - then.startOfDay()) / MILLIS_PER_DAY).toInt()
+
+            return when {
+                dayDiff <= 0 -> clock
+                dayDiff == 1 -> "昨天 $clock"
+                dayDiff < 7 -> "${WEEKDAYS[then.get(Calendar.DAY_OF_WEEK) - 1]} $clock"
+                then.get(Calendar.YEAR) == now.get(Calendar.YEAR) ->
+                    "${then.get(Calendar.MONTH) + 1}月${then.get(Calendar.DAY_OF_MONTH)}日 $clock"
+                else ->
+                    "${then.get(Calendar.YEAR)}/${then.get(Calendar.MONTH) + 1}/" +
+                        "${then.get(Calendar.DAY_OF_MONTH)} $clock"
+            }
+        }
+
         val DIFF = object : DiffUtil.ItemCallback<ChatDetailViewModel.UiMessage>() {
             override fun areItemsTheSame(
                 oldItem: ChatDetailViewModel.UiMessage,

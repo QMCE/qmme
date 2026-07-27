@@ -424,6 +424,16 @@ class MainHikagable(
                             }
                             true
                         }
+                        // Standard M3 bottom-nav affordance: re-tapping the
+                        // current destination returns its list to the top.
+                        setOnItemReselectedListener { item ->
+                            when (item.itemId) {
+                                PAGE_CHAT -> scrollListToTop(chatRecyclerView)
+                                PAGE_CONTACTS -> scrollListToTop(contactsRecyclerView)
+                                PAGE_ME -> myPage.smoothScrollTo(0, 0)
+                            }
+                            appBar.setExpanded(true, true)
+                        }
                         selectedItemId = PAGE_CHAT
                     },
                 )
@@ -792,6 +802,15 @@ class MainHikagable(
         if (::myStatusView.isInitialized) myStatusView.text = subtitle
     }
 
+    private fun scrollListToTop(list: RecyclerView) {
+        val layoutManager = list.layoutManager as? LinearLayoutManager
+        val firstVisible = layoutManager?.findFirstVisibleItemPosition() ?: 0
+        // Same pattern as the chat screen's jump-to-latest: cap the animated
+        // span so a long contact list doesn't glide for seconds.
+        if (firstVisible > SMOOTH_SCROLL_SPAN) list.scrollToPosition(SMOOTH_SCROLL_SPAN)
+        if ((list.adapter?.itemCount ?: 0) > 0) list.smoothScrollToPosition(0)
+    }
+
     private fun showPage(page: View) {
         // Top-level destinations change with a fade-through, per M3 motion
         // guidance for bottom-navigation switches (not a lateral axis).
@@ -815,6 +834,7 @@ class MainHikagable(
         private const val PAGE_CHAT = 1
         private const val PAGE_CONTACTS = 2
         private const val PAGE_ME = 3
+        private const val SMOOTH_SCROLL_SPAN = 20
 
         /**
          * `?attr/actionBarSize` (the appcompat attr, which Material3Expressive

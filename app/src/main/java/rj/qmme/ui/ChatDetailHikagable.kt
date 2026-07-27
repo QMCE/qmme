@@ -69,6 +69,7 @@ class ChatDetailHikagable(
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var recyclerView: RecyclerView
     private lateinit var emptyView: View
+    private lateinit var jumpToLatest: MaterialButton
     private lateinit var input: TextInputEditText
     private lateinit var imageButton: MaterialButton
     private lateinit var sendButton: MaterialButton
@@ -234,9 +235,29 @@ class ChatDetailHikagable(
                         clipToPadding = false
                         overScrollMode = View.OVER_SCROLL_NEVER
                         setPadding(0, dp(8), 0, dp(12))
+                        addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                            override fun onScrolled(view: RecyclerView, dx: Int, dy: Int) {
+                                updateJumpToLatest()
+                            }
+                        })
                     },
                 )
             }
+            // Anchored over the list, not in the composer: reading history is a
+            // list state, so the affordance to leave it lives on the list.
+            jumpToLatest = TonalIconButton(
+                lparams = LayoutParams(width = dp(44), height = dp(44)) {
+                    gravity = Gravity.BOTTOM or Gravity.END
+                    marginEnd = dp(16)
+                    bottomMargin = dp(16)
+                },
+                init = {
+                    icon = drawableResource(R.drawable.ic_arrow_downward)
+                    contentDescription = "回到最新消息"
+                    visibility = View.GONE
+                    setOnClickListener { scrollToLatest() }
+                },
+            )
             emptyView = LinearLayout(
                 lparams = LayoutParams(
                     width = ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -522,13 +543,25 @@ class ChatDetailHikagable(
                 launch {
                     viewModel.messages.collectLatest { messages ->
                         val previous = adapter.currentList
+                        val tailChanged =
+                            previous.lastOrNull()?.stableId != messages.lastOrNull()?.stableId
+                        // Sampled before submit; the answer changes once the new
+                        // rows are laid out.
+                        val wasNearBottom = isNearBottom()
+                        // Follow the conversation only when the user is part of
+                        // it: first fill, own send, or already reading the tail.
+                        // An incoming message must not yank someone out of the
+                        // history they scrolled up to read — they get the
+                        // jump-to-latest button instead.
                         val shouldFollowBottom = previous.isEmpty() ||
-                                previous.lastOrNull()?.stableId != messages.lastOrNull()?.stableId
+                                (tailChanged &&
+                                        (wasNearBottom || messages.lastOrNull()?.outgoing == true))
                         adapter.submitList(messages) {
                             if (shouldFollowBottom && messages.isNotEmpty()) {
                                 recyclerView.scrollToPosition(messages.lastIndex)
                             }
                             updateEmptyState()
+                            updateJumpToLatest()
                             // Reveal only once the list has actually been laid
                             // out at the bottom, so the fade shows the settled
                             // conversation rather than it scrolling into place.
@@ -564,8 +597,12 @@ class ChatDetailHikagable(
                 }
                 launch {
                     viewModel.sending.collectLatest { sending ->
+                        // Only the send action locks. Disabling the EditText
+                        // would drop focus and close the keyboard on every
+                        // send; sendText() already rejects re-entry, and the
+                        // user should be able to type the next message while
+                        // this one is in flight.
                         sendButton.isEnabled = !sending
-                        input.isEnabled = !sending
                     }
                 }
             }
@@ -581,6 +618,38 @@ class ChatDetailHikagable(
         if (messagesRevealed) return
         messagesRevealed = true
         Motion.fadeIn(swipeRefresh, Motion.defaultEffects(context))
+    }
+
+    /**
+     * "Near" spans the last two rows, not strictly the last pixel: a list that
+     * has drifted a few dp — an IME resize, a settled fling — should still
+     * count as following the conversation.
+     */
+    private fun isNearBottom(): Boolean {
+        val layoutManager = recyclerView.layoutManager as? LinearLayoutManager ?: return true
+        val last = layoutManager.findLastVisibleItemPosition()
+        if (last == RecyclerView.NO_POSITION) return true
+        return last >= adapter.itemCount - 2
+    }
+
+    private fun updateJumpToLatest() {
+        Motion.fadeVisibility(
+            jumpToLatest,
+            visible = adapter.itemCount > 0 && !isNearBottom(),
+        )
+    }
+
+    private fun scrollToLatest() {
+        val lastIndex = adapter.itemCount - 1
+        if (lastIndex < 0) return
+        val layoutManager = recyclerView.layoutManager as? LinearLayoutManager
+        val firstVisible = layoutManager?.findFirstVisibleItemPosition() ?: 0
+        // A smooth scroll across a long backlog animates for seconds; jump
+        // most of the way first so the glide is always short.
+        if (lastIndex - firstVisible > SMOOTH_SCROLL_SPAN) {
+            recyclerView.scrollToPosition(lastIndex - SMOOTH_SCROLL_SPAN)
+        }
+        recyclerView.smoothScrollToPosition(lastIndex)
     }
 
     private fun updateEmptyState() {
@@ -650,4 +719,8 @@ class ChatDetailHikagable(
 
     private fun dp(value: Int): Int =
         (value * context.resources.displayMetrics.density).toInt()
+
+    private companion object {
+        const val SMOOTH_SCROLL_SPAN = 20
+    }
 }
