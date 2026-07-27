@@ -336,7 +336,7 @@ internal object AvatarLoader {
 
     /** Identity of a load request, used to recognise an unchanged re-bind. */
     private fun requestKey(localPath: String?, urls: List<String>): String =
-        "local=${localPath.orEmpty().trim()}|urls=${urls.joinToString(separator = " ")}"
+        "local=${localPath.orEmpty().trim()}|urls=${urls.joinToString(separator = " ")}"
 
     /**
      * The bitmap [load] would return, but only if it is already decoded in the
