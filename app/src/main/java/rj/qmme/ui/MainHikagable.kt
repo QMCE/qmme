@@ -1,6 +1,8 @@
 package rj.qmme.ui
 
 import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -9,7 +11,6 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import androidx.core.graphics.ColorUtils
 import androidx.core.widget.NestedScrollView
 import androidx.core.widget.TextViewCompat
 import androidx.lifecycle.Lifecycle
@@ -306,44 +307,7 @@ class MainHikagable(
                             init = {
                                 title = "消息"
                                 subtitle = onlineSubtitle()
-                                // Emphasized large title; color is baked into the
-                                // QMME TextAppearance so AppCompat's washed
-                                // textColorPrimary cannot leak in.
-                                setExpandedTitleTextAppearance(
-                                    R.style.TextAppearance_QMME_CollapsingToolbar_ExpandedTitle,
-                                )
-                                setExpandedSubtitleTextAppearance(
-                                    R.style.TextAppearance_QMME_CollapsingToolbar_ExpandedSubtitle,
-                                )
-                                // Belt-and-suspenders: setExpanded*TextAppearance()
-                                // always re-reads android:textColor from the
-                                // appearance. Re-pin opaque M3 tokens afterwards
-                                // so the expanded title never paints at ~87% black
-                                // (#DE000000) while the collapsed title stays correct.
-                                setExpandedTitleColor(
-                                    opaqueMaterialColor(
-                                        this,
-                                        com.google.android.material.R.attr.colorOnSurface,
-                                    ),
-                                )
-                                setCollapsedTitleTextColor(
-                                    opaqueMaterialColor(
-                                        this,
-                                        com.google.android.material.R.attr.colorOnSurface,
-                                    ),
-                                )
-                                setExpandedSubtitleColor(
-                                    opaqueMaterialColor(
-                                        this,
-                                        com.google.android.material.R.attr.colorOnSurfaceVariant,
-                                    ),
-                                )
-                                setCollapsedSubtitleTextColor(
-                                    opaqueMaterialColor(
-                                        this,
-                                        com.google.android.material.R.attr.colorOnSurfaceVariant,
-                                    ),
-                                )
+                                applyAppBarTitleColors()
                             },
                         ) {
                             toolbar = MaterialToolbar(
@@ -832,9 +796,42 @@ class MainHikagable(
     private fun dp(value: Int): Int =
         (value * context.resources.displayMetrics.density).toInt()
 
-    /** Resolves an M3 color attr and forces full opacity (no washed 87% alpha). */
-    private fun opaqueMaterialColor(view: View, colorAttr: Int): Int =
-        ColorUtils.setAlphaComponent(MaterialColors.getColor(view, colorAttr), 0xFF)
+    /**
+     * Pins fully opaque M3 on-surface title/subtitle colors on the flexible app bar.
+     * AppCompat TextAppearances can leak a washed ?android:textColorPrimary (~87%
+     * alpha); re-pin the official app-bar tokens afterwards at 100% opacity.
+     */
+    private fun CollapsingToolbarLayout.applyAppBarTitleColors() {
+        setExpandedTitleTextAppearance(
+            R.style.TextAppearance_QMME_CollapsingToolbar_ExpandedTitle,
+        )
+        setCollapsedTitleTextAppearance(
+            R.style.TextAppearance_QMME_CollapsingToolbar_CollapsedTitle,
+        )
+        setExpandedSubtitleTextAppearance(
+            R.style.TextAppearance_QMME_CollapsingToolbar_ExpandedSubtitle,
+        )
+        setCollapsedSubtitleTextAppearance(
+            R.style.TextAppearance_QMME_CollapsingToolbar_CollapsedSubtitle,
+        )
+        // set*TextAppearance() always re-reads android:textColor from the style.
+        val titleColors = ColorStateList.valueOf(
+            opaqueThemeColor(this, com.google.android.material.R.attr.colorOnSurface),
+        )
+        val subtitleColors = ColorStateList.valueOf(
+            opaqueThemeColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant),
+        )
+        setExpandedTitleTextColor(titleColors)
+        setCollapsedTitleTextColor(titleColors)
+        setExpandedSubtitleTextColor(subtitleColors)
+        setCollapsedSubtitleTextColor(subtitleColors)
+    }
+
+    /** M3 on-surface token at full opacity — keeps theme RGB, drops washed alpha. */
+    private fun opaqueThemeColor(view: View, colorAttr: Int): Int {
+        val resolved = MaterialColors.getColor(view, colorAttr)
+        return Color.rgb(Color.red(resolved), Color.green(resolved), Color.blue(resolved))
+    }
 
     companion object {
         private const val PAGE_CHAT = 1
