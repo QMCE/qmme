@@ -33,7 +33,17 @@
         <item name="android:textColor">?attr/colorOnSurface</item>
     </style>
 
+    <style name="TextAppearance.QMME.CollapsingToolbar.CollapsedTitle"
+        parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
     <style name="TextAppearance.QMME.CollapsingToolbar.ExpandedSubtitle"
+        parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+    <style name="TextAppearance.QMME.CollapsingToolbar.CollapsedSubtitle"
         parent="TextAppearance.Material3.LabelLarge">
         <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
     </style>

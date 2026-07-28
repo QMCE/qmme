@@ -7,4 +7,25 @@
         <item name="listItemShapeAppearanceMiddle">@style/ShapeAppearance.QMME.ListItem.Middle</item>
         <item name="listItemShapeAppearanceLast">@style/ShapeAppearance.QMME.ListItem.Last</item>
     </style>
+
+    <!-- Dark headers need true white titles, not the muted colorOnSurface gray. -->
+    <style name="TextAppearance.QMME.CollapsingToolbar.ExpandedTitle"
+        parent="TextAppearance.Material3.HeadlineMedium.Emphasized">
+        <item name="android:textColor">@android:color/white</item>
+    </style>
+
+    <style name="TextAppearance.QMME.CollapsingToolbar.CollapsedTitle"
+        parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:textColor">@android:color/white</item>
+    </style>
+
+    <style name="TextAppearance.QMME.CollapsingToolbar.ExpandedSubtitle"
+        parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:textColor">#B3FFFFFF</item>
+    </style>
+
+    <style name="TextAppearance.QMME.CollapsingToolbar.CollapsedSubtitle"
+        parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:textColor">#B3FFFFFF</item>
+    </style>
 </resources>
