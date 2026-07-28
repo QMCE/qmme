@@ -21,6 +21,25 @@
         <item name="listItemShapeAppearanceFirst">@style/ShapeAppearance.QMME.ListItem.First</item>
         <item name="listItemShapeAppearanceMiddle">@style/ShapeAppearance.QMME.ListItem.Middle</item>
         <item name="listItemShapeAppearanceLast">@style/ShapeAppearance.QMME.ListItem.Last</item>
+
+        <!-- Home flexible medium app bar: typography + on-surface colors in XML
+             so the constructor applies text colors after appearances (the order
+             CollapsingToolbarLayout expects). Runtime code must not call
+             setExpanded*TextAppearance() again — that re-poisons expandedTextColor
+             from AppCompat's washed textColorPrimary chain. -->
+        <item name="collapsingToolbarLayoutMediumStyle">@style/Widget.QMME.CollapsingToolbar.Medium</item>
+    </style>
+
+    <style name="Widget.QMME.CollapsingToolbar.Medium"
+        parent="Widget.Material3Expressive.CollapsingToolbar.Medium">
+        <item name="expandedTitleTextAppearance">@style/TextAppearance.QMME.CollapsingToolbar.ExpandedTitle</item>
+        <item name="collapsedTitleTextAppearance">@style/TextAppearance.QMME.CollapsingToolbar.CollapsedTitle</item>
+        <item name="expandedSubtitleTextAppearance">@style/TextAppearance.QMME.CollapsingToolbar.ExpandedSubtitle</item>
+        <item name="collapsedSubtitleTextAppearance">@style/TextAppearance.QMME.CollapsingToolbar.CollapsedSubtitle</item>
+        <item name="expandedTitleTextColor">?attr/colorOnSurface</item>
+        <item name="collapsedTitleTextColor">?attr/colorOnSurface</item>
+        <item name="expandedSubtitleTextColor">?attr/colorOnSurfaceVariant</item>
+        <item name="collapsedSubtitleTextColor">?attr/colorOnSurfaceVariant</item>
     </style>
 
     <!--

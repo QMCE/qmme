@@ -3,6 +3,9 @@ package rj.qmme.ui
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -305,9 +308,15 @@ class MainHikagable(
                         collapsingToolbar = MediumCollapsingToolbar(
                             lparams = LayoutParams(widthMatchParent = true),
                             init = {
-                                title = "消息"
-                                subtitle = onlineSubtitle()
                                 applyAppBarTitleColors()
+                                title = appBarTitleText("消息")
+                                subtitle = appBarSubtitleText(onlineSubtitle())
+                                // Font loading / layout can rebuild the expanded
+                                // StaticLayout after init; re-pin colors then.
+                                post {
+                                    applyAppBarTitleColors()
+                                    refreshAppBarText()
+                                }
                             },
                         ) {
                             toolbar = MaterialToolbar(
@@ -764,7 +773,9 @@ class MainHikagable(
 
     private fun renderOnlineStatus() {
         val subtitle = onlineSubtitle()
-        collapsingToolbar.subtitle = subtitle
+        if (::collapsingToolbar.isInitialized) {
+            collapsingToolbar.subtitle = collapsingToolbar.appBarSubtitleText(subtitle)
+        }
         if (::myStatusView.isInitialized) myStatusView.text = subtitle
     }
 
@@ -784,10 +795,17 @@ class MainHikagable(
         chatPage.visibility = if (page === chatPage) View.VISIBLE else View.GONE
         contactsPage.visibility = if (page === contactsPage) View.VISIBLE else View.GONE
         myPage.visibility = if (page === myPage) View.VISIBLE else View.GONE
-        collapsingToolbar.title = when (page) {
-            chatPage -> "消息"
-            contactsPage -> "联系人"
-            else -> "我的"
+        if (::collapsingToolbar.isInitialized) {
+            collapsingToolbar.apply {
+                title = appBarTitleText(
+                    when (page) {
+                        chatPage -> "消息"
+                        contactsPage -> "联系人"
+                        else -> "我的"
+                    },
+                )
+                applyAppBarTitleColors()
+            }
         }
         // The flexible bar re-expands when landing on a new destination.
         appBar.setExpanded(true, true)
@@ -797,35 +815,53 @@ class MainHikagable(
         (value * context.resources.displayMetrics.density).toInt()
 
     /**
-     * Pins fully opaque M3 on-surface title/subtitle colors on the flexible app bar.
-     * AppCompat TextAppearances can leak a washed ?android:textColorPrimary (~87%
-     * alpha); re-pin the official app-bar tokens afterwards at 100% opacity.
+     * Pins fully opaque M3 on-surface colors. Do not call setExpanded*TextAppearance()
+     * here — it re-reads AppCompat's washed ?android:textColorPrimary into
+     * expandedTextColor while the expanded large title is painted via StaticLayout.
+     * Typography + semantic colors are declared on [Widget.QMME.CollapsingToolbar.Medium].
      */
     private fun CollapsingToolbarLayout.applyAppBarTitleColors() {
-        setExpandedTitleTextAppearance(
-            R.style.TextAppearance_QMME_CollapsingToolbar_ExpandedTitle,
-        )
-        setCollapsedTitleTextAppearance(
-            R.style.TextAppearance_QMME_CollapsingToolbar_CollapsedTitle,
-        )
-        setExpandedSubtitleTextAppearance(
-            R.style.TextAppearance_QMME_CollapsingToolbar_ExpandedSubtitle,
-        )
-        setCollapsedSubtitleTextAppearance(
-            R.style.TextAppearance_QMME_CollapsingToolbar_CollapsedSubtitle,
-        )
-        // set*TextAppearance() always re-reads android:textColor from the style.
-        val titleColors = ColorStateList.valueOf(
+        val titleColor = opaqueThemeColor(this, com.google.android.material.R.attr.colorOnSurface)
+        val subtitleColor =
+            opaqueThemeColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant)
+        setExpandedTitleColor(titleColor)
+        setCollapsedTitleTextColor(titleColor)
+        setExpandedSubtitleColor(subtitleColor)
+        setCollapsedSubtitleTextColor(subtitleColor)
+        // Separate instances so expanded/collapsed helpers are not reference-aliased.
+        setExpandedTitleTextColor(ColorStateList.valueOf(titleColor))
+        setCollapsedTitleTextColor(ColorStateList.valueOf(titleColor))
+        setExpandedSubtitleTextColor(ColorStateList.valueOf(subtitleColor))
+        setCollapsedSubtitleTextColor(ColorStateList.valueOf(subtitleColor))
+    }
+
+    private fun CollapsingToolbarLayout.refreshAppBarText() {
+        title = appBarTitleText(title ?: "")
+        subtitle = appBarSubtitleText(subtitle ?: "")
+    }
+
+    private fun CollapsingToolbarLayout.appBarTitleText(text: CharSequence): CharSequence =
+        spannableWithColor(
+            text,
             opaqueThemeColor(this, com.google.android.material.R.attr.colorOnSurface),
         )
-        val subtitleColors = ColorStateList.valueOf(
+
+    private fun CollapsingToolbarLayout.appBarSubtitleText(text: CharSequence): CharSequence =
+        spannableWithColor(
+            text,
             opaqueThemeColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant),
         )
-        setExpandedTitleTextColor(titleColors)
-        setCollapsedTitleTextColor(titleColors)
-        setExpandedSubtitleTextColor(subtitleColors)
-        setCollapsedSubtitleTextColor(subtitleColors)
-    }
+
+    /** Expanded titles render through StaticLayout; a span overrides washed paint color. */
+    private fun spannableWithColor(text: CharSequence, color: Int): CharSequence =
+        SpannableString(text).apply {
+            setSpan(
+                ForegroundColorSpan(color),
+                0,
+                length,
+                Spanned.SPAN_INCLUSIVE_EXCLUSIVE,
+            )
+        }
 
     /** M3 on-surface token at full opacity — keeps theme RGB, drops washed alpha. */
     private fun opaqueThemeColor(view: View, colorAttr: Int): Int {
