@@ -1,6 +1,7 @@
 package rj.qmme.ui
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.util.Log
 import android.util.TypedValue
@@ -10,7 +11,6 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import androidx.core.graphics.ColorUtils
 import androidx.core.widget.NestedScrollView
 import androidx.core.widget.TextViewCompat
 import androidx.lifecycle.Lifecycle
@@ -797,10 +797,9 @@ class MainHikagable(
         (value * context.resources.displayMetrics.density).toInt()
 
     /**
-     * Pins fully opaque title/subtitle colors on the flexible app bar. Appearance
-     * styles can still inherit AppCompat's washed ?android:textColorPrimary, and
-     * colorOnSurface on dark surfaces is off-white rather than true white — both
-     * read as "too faint" against a dark header.
+     * Pins fully opaque M3 on-surface title/subtitle colors on the flexible app bar.
+     * AppCompat TextAppearances can leak a washed ?android:textColorPrimary (~87%
+     * alpha); re-pin the official app-bar tokens afterwards at 100% opacity.
      */
     private fun CollapsingToolbarLayout.applyAppBarTitleColors() {
         setExpandedTitleTextAppearance(
@@ -816,39 +815,23 @@ class MainHikagable(
             R.style.TextAppearance_QMME_CollapsingToolbar_CollapsedSubtitle,
         )
         // set*TextAppearance() always re-reads android:textColor from the style.
-        // Re-pin high-contrast colors afterwards.
-        val titleColor = highContrastTitleColor(this)
-        val subtitleColor = highContrastSubtitleColor(this)
-        setExpandedTitleColor(titleColor)
-        setCollapsedTitleTextColor(titleColor)
-        setExpandedSubtitleColor(subtitleColor)
-        setCollapsedSubtitleTextColor(subtitleColor)
+        val titleColors = ColorStateList.valueOf(
+            opaqueThemeColor(this, com.google.android.material.R.attr.colorOnSurface),
+        )
+        val subtitleColors = ColorStateList.valueOf(
+            opaqueThemeColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant),
+        )
+        setExpandedTitleTextColor(titleColors)
+        setCollapsedTitleTextColor(titleColors)
+        setExpandedSubtitleTextColor(subtitleColors)
+        setCollapsedSubtitleTextColor(subtitleColors)
     }
 
-    private fun appBarSurfaceColor(view: View): Int =
-        MaterialColors.getColor(
-            view,
-            com.google.android.material.R.attr.colorSurfaceContainer,
-        )
-
-    private fun highContrastTitleColor(view: View): Int =
-        if (MaterialColors.isColorLight(appBarSurfaceColor(view))) {
-            opaqueMaterialColor(view, com.google.android.material.R.attr.colorOnSurface)
-        } else {
-            Color.WHITE
-        }
-
-    private fun highContrastSubtitleColor(view: View): Int =
-        if (MaterialColors.isColorLight(appBarSurfaceColor(view))) {
-            opaqueMaterialColor(view, com.google.android.material.R.attr.colorOnSurfaceVariant)
-        } else {
-            // Secondary line on a dark header: bright but still below the title.
-            ColorUtils.setAlphaComponent(Color.WHITE, 0xB3)
-        }
-
-    /** Resolves an M3 color attr and forces full opacity (no washed 87% alpha). */
-    private fun opaqueMaterialColor(view: View, colorAttr: Int): Int =
-        ColorUtils.setAlphaComponent(MaterialColors.getColor(view, colorAttr), 0xFF)
+    /** M3 on-surface token at full opacity — keeps theme RGB, drops washed alpha. */
+    private fun opaqueThemeColor(view: View, colorAttr: Int): Int {
+        val resolved = MaterialColors.getColor(view, colorAttr)
+        return Color.rgb(Color.red(resolved), Color.green(resolved), Color.blue(resolved))
+    }
 
     companion object {
         private const val PAGE_CHAT = 1

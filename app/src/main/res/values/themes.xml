@@ -24,9 +24,9 @@
     </style>
 
     <!--
-      Emphasized large title used by the home flexible app bar. Bakes in
-      colorOnSurface so setExpandedTitleTextAppearance() cannot reintroduce a
-      washed textColorPrimary from the AppCompat parent chain.
+      Emphasized large title used by the home flexible app bar. Parents the
+      official M3 app-bar title token (colorOnSurface) so AppCompat's washed
+      textColorPrimary cannot leak in.
     -->
     <style name="TextAppearance.QMME.CollapsingToolbar.ExpandedTitle"
         parent="TextAppearance.Material3.HeadlineMedium.Emphasized">
@@ -34,19 +34,13 @@
     </style>
 
     <style name="TextAppearance.QMME.CollapsingToolbar.CollapsedTitle"
-        parent="TextAppearance.Material3.TitleLarge">
-        <item name="android:textColor">?attr/colorOnSurface</item>
-    </style>
+        parent="TextAppearance.Material3.ActionBar.Title" />
 
     <style name="TextAppearance.QMME.CollapsingToolbar.ExpandedSubtitle"
-        parent="TextAppearance.Material3.LabelLarge">
-        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
-    </style>
+        parent="TextAppearance.Material3.ActionBar.Subtitle" />
 
     <style name="TextAppearance.QMME.CollapsingToolbar.CollapsedSubtitle"
-        parent="TextAppearance.Material3.LabelLarge">
-        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
-    </style>
+        parent="TextAppearance.Material3.ActionBar.Subtitle" />
 
     <style name="ShapeAppearance.QMME.ListItem.First" parent="">
         <item name="cornerFamily">?attr/shapeCornerFamily</item>
