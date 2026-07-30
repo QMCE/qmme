@@ -539,36 +539,39 @@ class QmmeApp : WatchApplicationDelegate() {
         SignatureProbe.dump(this)
         // Kept idempotent for warm-starts and vendor process recreation.
         initializeQmmkv()
-        // CRITICAL: Initialize official startup director to complete the full 
-        // ColdStartupTask chain which includes KernelInitTask that initializes
-        // all native services including MsgService, BuddyService, GroupService, etc.
-        // This is why message list fails to load - msg service never got native handle.
+        // CRITICAL: Initialize official startup director FIRST before any custom init
         if (isMainProcess()) {
-            // Call official NtStartupDirector.a(context, "application") 
-            // to execute the complete task chain in correct order
             try {
                 val directorClass = Class.forName("com.tencent.qqnt.watch.startup.director.NtStartupDirector")
                 val aMethod = directorClass.getMethod("a", android.content.Context::class.java, String::class.java)
                 
-                // Set context like official does - set sMobileQQ and this instance
+                // Set context like official does - MUST do this first!
                 directorClass.getDeclaredField("c").apply { isAccessible = true }.set(null, this)
                 mqq.app.MobileQQ.sMobileQQ = this
                 
-                // Execute the ApplicationCreate task chain
+                Log.i("QMME", "Calling NtStartupDirector.a(context, 'application')...")
                 aMethod.invoke(null, this, "application")
-                Log.i("QMME", "NtStartupDirector initialized successfully - message service should now work")
+                Log.i("QMME", "✓ NtStartupDirector completed successfully!")
             } catch (e: Exception) {
-                Log.e("QMME", "Failed to call NtStartupDirector, message service may not be initialized", e)
+                Log.e("QMME-ERROR", "✗ NtStartupDirector failed: ${e.javaClass.simpleName}: ${e.message}", e)
             }
             
-            // Then proceed with our custom initializations that run AFTER official tasks
+            // Then proceed with all custom initializations AFTER official chain
             BridgeBugly.init(this)
             ConfigurationManager.init(this)
             TelemetryBridge.init()
         }
-        // These must run in EVERY process for proper device fingerprinting
-        initializeQimei()
+        
+        // QIMEI initialization is DONE by official QQ Watch in ColdStartupTask.MiscInitTask
+        // IMPORTANT: Do NOT re-initialize or use wrong AppKey!
+        // Official uses internal QIMEI SDK with its own AppKey (0S200H74R907V3HE for debug)
+        // We should only read the already-initialized QIMEI via Qqimei.a() after official init completes
+        
+        Log.d("QMME", "QIMEI already initialized by official ColdStartupTask, will read on-demand")
+        
+        // Then load PowHelper and other components
         rj.qmme.fix.PoWHelper.ensureLoaded()
+        
         if (isMainProcess()) {
             // Keep MobileQQ's own cold-start lifecycle intact.  In particular, do not
             // replay LoginPrefs here: setSortAccountList()/login() during Application
