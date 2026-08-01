@@ -44,6 +44,7 @@ class MessageAdapter(
         lateinit var nickname: MaterialTextView
         lateinit var time: MaterialTextView
         lateinit var card: MaterialCardView
+        lateinit var replyPreview: MaterialTextView
         lateinit var image: ShapeableImageView
         lateinit var body: MaterialTextView
         val maxBubbleWidth = (parent.resources.displayMetrics.widthPixels * 0.72f).toInt()
@@ -152,6 +153,29 @@ class MessageAdapter(
                                     )
                                 },
                             ) {
+                                replyPreview = MaterialTextView(
+                                    lparams = LayoutParams(
+                                        width = ViewGroup.LayoutParams.WRAP_CONTENT,
+                                    ) {
+                                        bottomMargin = dp(parent, 6)
+                                    },
+                                    init = {
+                                        TextViewCompat.setTextAppearance(
+                                            this,
+                                            com.google.android.material.R.style.TextAppearance_Material3_BodySmall,
+                                        )
+                                        maxWidth = maxBubbleWidth
+                                        maxLines = 2
+                                        ellipsize = TextUtils.TruncateAt.END
+                                        setPadding(
+                                            dp(parent, 8),
+                                            dp(parent, 4),
+                                            dp(parent, 8),
+                                            dp(parent, 4),
+                                        )
+                                        visibility = View.GONE
+                                    },
+                                )
                                 image = ShapeableImageView(
                                     lparams = LayoutParams(
                                         width = imageWidth,
@@ -192,6 +216,7 @@ class MessageAdapter(
             nickname,
             time,
             card,
+            replyPreview,
             image,
             body,
             isGroup,
@@ -253,6 +278,7 @@ class MessageAdapter(
         private val nickname: MaterialTextView,
         private val time: MaterialTextView,
         private val card: MaterialCardView,
+        private val replyPreview: MaterialTextView,
         private val image: ShapeableImageView,
         private val body: MaterialTextView,
         private val isGroup: Boolean,
@@ -368,6 +394,24 @@ class MessageAdapter(
             )
             body.textColor = onContainer
 
+            val reply = message.reply
+            if (reply == null) {
+                replyPreview.visibility = View.GONE
+            } else {
+                replyPreview.visibility = View.VISIBLE
+                replyPreview.text = "${reply.senderName}：${reply.summary}"
+                replyPreview.textColor = MaterialColors.getColor(
+                    replyPreview,
+                    com.google.android.material.R.attr.colorOnSurfaceVariant,
+                )
+                replyPreview.setBackgroundColor(
+                    MaterialColors.getColor(
+                        replyPreview,
+                        com.google.android.material.R.attr.colorSurfaceContainerHighest,
+                    ),
+                )
+            }
+
             val picture = message.image
             if (picture == null) {
                 AvatarLoader.unbind(image)
@@ -393,15 +437,16 @@ class MessageAdapter(
                 image.setOnClickListener { onImageClick(picture, image) }
             }
             body.text = message.text
-            body.visibility = if (picture != null && message.text == "[图片]") {
-                View.GONE
-            } else {
-                View.VISIBLE
+            body.visibility = when {
+                message.text.isBlank() -> View.GONE
+                picture != null && message.text == "[图片]" -> View.GONE
+                else -> View.VISIBLE
             }
             card.contentDescription = buildString {
                 append(if (outgoing) "我" else message.senderName.ifBlank { "对方" })
                 append("：")
-                append(message.text)
+                if (reply != null) append("回复 ${reply.senderName} ")
+                append(message.text.ifBlank { if (picture != null) "[图片]" else "" })
             }
             card.setOnLongClickListener {
                 onMessageLongClick(message)

@@ -44,5 +44,5 @@ betterandroid-android-bom = { group = "com.highcapable.betterandroid", name = "a
 [plugins]
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
 hikage = { id = "com.highcapable.hikage", version.ref = "hikagePlugin" }
-

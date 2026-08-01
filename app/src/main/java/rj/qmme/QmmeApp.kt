@@ -49,6 +49,7 @@ import rj.qmme.kernel.KernelBridge
 import rj.qmme.runtime.HeartbeatManager
 import rj.qmme.runtime.RuntimeCoordinator
 import java.lang.reflect.Method
+import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.system.exitProcess
@@ -144,10 +145,7 @@ class QmmeApp : WatchApplicationDelegate() {
             Constants.LogoutReason.suspend
         )
         private val loginRestartScheduled = AtomicBoolean(false)
-
-        // QQ Watch 9.0.7 Beacon/QIMEI app key (com.tencent.mobileqq.statistics.Qqimei /
-        // QQBeaconReport). MSF and WtLogin resolve the QimeiSDK instance by this key.
-        private const val BEACON_APP_KEY = "0AND05WGZE38P5II"
+        private const val QIMEI_APP_KEY = "0AND05WGZE38P5II"
 
         fun markLoginEstablished() {
             _logoutReason.value = null
@@ -562,13 +560,11 @@ class QmmeApp : WatchApplicationDelegate() {
             TelemetryBridge.init()
         }
         
-        // QIMEI initialization is DONE by official QQ Watch in ColdStartupTask.MiscInitTask
-        // IMPORTANT: Do NOT re-initialize or use wrong AppKey!
-        // Official uses internal QIMEI SDK with its own AppKey (0S200H74R907V3HE for debug)
-        // We should only read the already-initialized QIMEI via Qqimei.a() after official init completes
-        
-        Log.d("QMME", "QIMEI already initialized by official ColdStartupTask, will read on-demand")
-        
+        // The stock ApplicationCreate dispatcher is configured per process.  In this
+        // port its task graph can be absent when MSF starts independently, so make the
+        // QIMEI-critical part explicit before custom code can attach MSF or start SSO.
+        initializeOfficialQimeiStartup()
+
         // Then load PowHelper and other components
         rj.qmme.fix.PoWHelper.ensureLoaded()
         
@@ -685,6 +681,13 @@ class QmmeApp : WatchApplicationDelegate() {
             c.startsWith("oicq.wlogin_sdk.") ||
                     c.startsWith("com.tencent.mobileqq.msf.core.auth.") ||
                     c.startsWith("com.tencent.mobileqq.msf.core.net.") ||
+                    // libqimei.so collects identity via JNI (getPackageName/getPackageInfo).
+                    // It must see the same spoofed package as the already-spoofed signature
+                    // and official app key, otherwise the register request carries an
+                    // inconsistent pn=rj.qmme + Tencent-cert + official-appKey triple and the
+                    // server silently refuses to mint a QIMEI (empty err code).
+                    c.startsWith("com.tencent.qimei.") ||
+                    c.startsWith("com.tencent.mobileqq.statistics.") ||
                     c.contains("WtLogin") ||
                     c.contains("wlogin") ||
                     c == "rj.qmme.fix.SignatureProbe"
@@ -726,16 +729,149 @@ class QmmeApp : WatchApplicationDelegate() {
         Log.w("QMME", "getCustomGuid failed", error)
     }.getOrNull()
 
-    private val qimeiInitialized = AtomicBoolean(false)
+    private val qimeiStartupAttempted = AtomicBoolean(false)
+
+    /**
+     * Runs the QIMEI portion of the official Watch cold-start graph synchronously.
+     *
+     * The Watch configuration intentionally differs by process: the main process
+     * dispatches MiscInitTask followed by BeaconSDKInitTask, while the MSF process
+     * dispatches MiscInitTask only.  Do not infer ordering from the task enum; these
+     * lists come from MainProcessConfigReader and MSFProcessConfigReader in the
+     * matching 9.0.7 runtime.
+     */
+    private fun initializeOfficialQimeiStartup() {
+        if (!qimeiStartupAttempted.compareAndSet(false, true)) return
+
+        val process = currentProcessName()
+        val taskNames = if (isMsfProcess()) {
+            listOf("MiscInitTask")
+        } else {
+            listOf("MiscInitTask", "BeaconSDKInitTask")
+        }
+        val loader = MobileQQ::class.java.classLoader
+        Log.i(
+            "QMME-QIMEI",
+            "startup begin pid=${Process.myPid()} process=$process tasks=${taskNames.joinToString(",")} " +
+                "loader=${loaderIdentity(loader)}",
+        )
+
+        // Qqimei.b(false) refuses to initialize unless PrivacyPolicyHelper.a() is true,
+        // which only happens when privacypolicy_state == "1".  This client has no consent
+        // screen, so record launch as consent before the task reads the gate.  Per-process:
+        // each process re-reads its own MMKV/static state, so this must run everywhere.
+        ensurePrivacyConsentForQimei(process)
+
+        val completed = taskNames.all { taskName ->
+            runOfficialStartupTask(taskName, loader, process)
+        }
+        val qimei = runCatching { com.tencent.mobileqq.statistics.Qqimei.a() }.getOrNull()
+        val beaconInitialized = officialBeaconInitialized()
+        val qimeiState = if (qimei.isNullOrEmpty()) {
+            "qimei36Len=0"
+        } else {
+            "qimei36Len=${qimei.length} qimei36Digest=${shortDigest(qimei)}"
+        }
+        val outcome = if (completed) "completed" else "failed"
+        Log.i(
+            "QMME-QIMEI",
+            "startup $outcome pid=${Process.myPid()} process=$process beacon=$beaconInitialized $qimeiState",
+        )
+        OfflineDiagnostics.record(
+            this,
+            "qimei_startup_$outcome",
+            "process=$process beacon=$beaconInitialized qimei36Len=${qimei?.length ?: 0}",
+        )
+    }
+
+    private fun runOfficialStartupTask(taskName: String, loader: ClassLoader?, process: String): Boolean {
+        val className = "com.tencent.qqnt.watch.startup.task.$taskName"
+        Log.i("QMME-QIMEI", "task begin name=$taskName process=$process")
+        return runCatching {
+            val taskClass = Class.forName(className, true, loader)
+            val task = taskClass.getDeclaredConstructor().newInstance()
+            taskClass.getMethod("a", Context::class.java).invoke(task, this)
+            Log.i(
+                "QMME-QIMEI",
+                "task complete name=$taskName process=$process loader=${loaderIdentity(taskClass.classLoader)}",
+            )
+            true
+        }.getOrElse { error ->
+            val root = (error as? java.lang.reflect.InvocationTargetException)?.targetException ?: error
+            Log.e(
+                "QMME-QIMEI",
+                "task failed name=$taskName process=$process error=${root.javaClass.simpleName}",
+                root,
+            )
+            OfflineDiagnostics.record(
+                this,
+                "qimei_startup_task_failed",
+                "process=$process task=$taskName error=${root.javaClass.simpleName}",
+            )
+            false
+        }
+    }
+
+    /**
+     * Records launch as privacy consent so `PrivacyPolicyHelper.a()` returns true and
+     * `Qqimei.b(false)` proceeds.  It reads MMKV `common_mmkv_configurations`/
+     * `privacypolicy_state`; only the value "1" unlocks QIMEI init.  Written through the
+     * same QMMKV entity the official helper reads, before the task evaluates the gate.
+     */
+    private fun ensurePrivacyConsentForQimei(process: String) {
+        runCatching {
+            val entity = com.tencent.mobileqq.qmmkv.QMMKV.a(this, "common_mmkv_configurations")
+            if (entity == null) {
+                Log.w("QMME-QIMEI", "privacy consent: MMKV entity null process=$process")
+                return@runCatching
+            }
+            val current = entity.o("privacypolicy_state", "")
+            if (current != "1") {
+                entity.v("privacypolicy_state", "1")
+                Log.i("QMME-QIMEI", "privacy consent: set privacypolicy_state=1 (was '$current') process=$process")
+            } else {
+                Log.d("QMME-QIMEI", "privacy consent: already accepted process=$process")
+            }
+        }.onFailure { error ->
+            Log.w("QMME-QIMEI", "privacy consent: failed process=$process error=${error.javaClass.simpleName}", error)
+            OfflineDiagnostics.record(
+                this,
+                "qimei_privacy_consent_failed",
+                "process=$process error=${error.javaClass.simpleName}",
+            )
+        }
+    }
+
+    private fun officialBeaconInitialized(): Boolean = runCatching {
+        val beaconClass = Class.forName("com.tencent.mobileqq.statistics.QQBeaconReport")
+        val initialized = beaconClass.getDeclaredField("a").apply { isAccessible = true }
+            .get(null) as? AtomicBoolean
+        initialized?.get() == true
+    }.getOrDefault(false)
+
+    private fun currentProcessName(): String = if (AndroidVersion.isAtLeast(AndroidVersion.P)) {
+        processName
+    } else {
+        currentProcessNameByActivityThread
+            ?: runCatching { currentProcessNameByActivityManager }.getOrNull()
+    }.orEmpty()
+
+    private fun loaderIdentity(loader: ClassLoader?): String =
+        if (loader == null) "bootstrap" else "${loader.javaClass.name}@${System.identityHashCode(loader)}"
+
+    private fun shortDigest(value: String): String = runCatching {
+        MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
+            .take(6)
+            .joinToString("") { byte -> "%02x".format(byte) }
+    }.getOrDefault("unavailable")
 
     @Volatile
     private var cachedMsfAdapter: MSFInterfaceAdapter? = null
 
     /**
-     * Match official WatchApplicationDelegate exactly: it returns an adapter that ONLY
-     * overrides getWTUinStoreFileDirLastResort(). The default getBeaconAppKey() returns
-     * "" (empty string), which is what the official code uses for QimeiSDK.getInstance("").
-     * This ensures MSF and WtLogin get the SAME QIMEI SDK instance key as the stock client.
+     * MSF resolves QimeiSDK by this adapter key. Qqimei's Watch implementation uses
+     * 0AND05WGZE38P5II internally; returning the adapter default (empty) creates a
+     * second, never-initialized SDK instance and makes the first SSO omit QIMEI.
      */
     override fun getMSFInterfaceAdapter(): MSFInterfaceAdapter {
         val result = cachedMsfAdapter
@@ -746,7 +882,8 @@ class QmmeApp : WatchApplicationDelegate() {
         val newAdapter = object : MSFInterfaceAdapter() {
             override fun getWTUinStoreFileDirLastResort(): String =
                 official.getWTUinStoreFileDirLastResort()
-            // Do NOT override getBeaconAppKey() - use default which returns ""
+
+            override fun getBeaconAppKey(): String = QIMEI_APP_KEY
         }
         
         // Double-check pattern with volatile read
@@ -757,156 +894,6 @@ class QmmeApp : WatchApplicationDelegate() {
         
         cachedMsfAdapter = newAdapter
         return newAdapter
-    }
-
-    /**
-     * Initialize the official QIMEI SDK (libqimei.so) under [BEACON_APP_KEY] so a
-     * real, stable device fingerprint is attached to SSO packets (ReserveFields
-     * .qimei) and handed to WtLogin (QIMEI16).
-     *
-     * Matches the official MiscInitTask exactly: it calls Qqimei.b(false), which
-     * only initializes when PrivacyPolicyHelper.a() is true. We therefore first
-     * persist the privacy-policy state to "1" (user-accepted) in the same MMKV
-     * store the helper reads, so the official false path runs the full init
-     * instead of returning early. This keeps behavior identical to the stock
-     * client rather than force-bypassing the privacy gate with b(true).
-     */
-    private fun initializeQimei() {
-        if (!qimeiInitialized.compareAndSet(false, true)) return
-        runCatching { System.loadLibrary("qimei") }
-            .onFailure { Log.d("QMME", "libqimei preload skipped: ${it.message}") }
-        // Mark privacy policy as accepted so Qqimei.b(false) proceeds like official.
-        ensurePrivacyPolicyAccepted()
-        // CRITICAL: Beacon SDK MUST be initialized BEFORE QIMEI (official order:
-        // BeaconSDKInitTask -> MiscInitTask). QIMEI generation depends on Beacon's
-        // network registration; if Beacon isn't ready, QIMEI stays null and the
-        // server rejects the device (isSameDevice=false -> instant kick).
-        ensureBeaconInitialized()
-        runCatching {
-            // Match official MiscInitTask: Qqimei.b(false)
-            com.tencent.mobileqq.statistics.Qqimei.b(false)
-            val qimei36 = com.tencent.mobileqq.statistics.Qqimei.a()
-            Log.d("QMME", "QIMEI init done qimei36Len=${qimei36?.length ?: 0}")
-        }.onFailure { Log.w("QMME", "QIMEI init failed", it) }
-    }
-
-    /**
-     * [CRITICAL FIX] Initialize Beacon SDK using QQ's classloader context.
-     * 
-     * The root cause of "QM register qm failed, response err code is (empty)" was
-     * a ClassLoader mismatch: libqimei.so's JNI_OnLoad does findClass("com.tencent.qimei.uin.U")
-     * using the **caller's** classloader. If we call it from QmmeApp (rj.qmme loader),
-     * findClass cannot see classes in qq-core.jar -> RegisterNatives fails -> 
-     * com.tencent.qimei.uin.U.a flag stays false -> native methods unbound.
-     */
-    private fun ensureBeaconInitialized() {
-        // Try direct call first
-        var success = false
-        
-        try {
-            val reportClass = Class.forName("com.tencent.mobileqq.statistics.QQBeaconReport")
-            reportClass.getMethod("d", String::class.java).invoke(null, "")
-            Log.i("QMME", "Beacon SDK initialized successfully with direct call")
-            success = true
-        } catch (e1: Exception) {
-            Log.w("QMME-ClassLoader", "Direct Beacon init failed", e1)
-            
-            // Fallback: Try calling through MobileQQ's instance
-            try {
-                val mobileQQClass = Class.forName("mqq.app.MobileQQ")
-                val sMobileQQField = mobileQQClass.getDeclaredField("sMobileQQ")
-                sMobileQQField.isAccessible = true
-                val mobileQQ = sMobileQQField.get(null)
-                
-                if (mobileQQ != null) {
-                    // Invoke via MobileQQ - uses its classloader for findClass
-                    val wrapperClass = Class.forName(
-                        "com.tencent.mobileqq.statistics.QQBeaconReport",
-                        false,
-                        mobileQQClass.classLoader
-                    )
-                    
-                    wrapperClass.getMethod("d", String::class.java)
-                        .invoke(mobileQQ, "")
-                    
-                    Log.i("QMME", "Beacon SDK initialized via MobileQQ's context!")
-                    success = true
-                } else {
-                    Log.w("QMME", "MobileQQ singleton not available")
-                }
-            } catch (e2: Exception) {
-                Log.e("QMME-ClassLoader", "Failed to use MobileQQ for Beacon init", e2)
-                Log.w("QMME", "Will retry QIMEI via standard path next time")
-            }
-        }
-        
-        if (!success) {
-            Log.w("QMME", "All Beacon init attempts failed - device fingerprint likely empty")
-        }
-    }
-
-    /**
-     * Zero out "common_mmkv_configurations"/"key_oaid_last_update_time" so
-     * QQBeaconPrivateInfo re-runs the VendorManager OAID fetch instead of taking
-     * the "<24h -> getOAIDAsync not call" shortcut. Needed because a prior failed
-     * QIMEI registration can persist the timestamp while leaving QIMEI empty.
-     */
-    private fun resetOaidFetchTimestamp() {
-        runCatching {
-            val entity = com.tencent.mobileqq.qmmkv.QMMKV.a(this, "common_mmkv_configurations")
-            if (entity == null) {
-                Log.w("QMME", "resetOaidFetchTimestamp: MMKV entity null")
-                return
-            }
-            entity.u("key_oaid_last_update_time", 0L)
-            Log.i("QMME", "reset key_oaid_last_update_time=0 to force OAID fetch")
-        }.onFailure { Log.w("QMME", "resetOaidFetchTimestamp failed", it) }
-    }
-
-    /**
-     * Persist privacy-policy acceptance to the MMKV store that
-     * PrivacyPolicyHelper.a() reads. The official helper returns true only when
-     * "common_mmkv_configurations"/"privacypolicy_state" == "1"; setting it here
-     * lets the stock QIMEI/telemetry init paths run unmodified.
-     */
-    private fun ensurePrivacyPolicyAccepted() {
-        try {
-            val helperClass = Class.forName("com.tencent.mobileqq.app.privacy.PrivacyPolicyHelper")
-            // Check current status first
-            val currentState = runCatching { 
-                helperClass.getMethod("a").invoke(null) as? Boolean 
-            }.getOrNull() ?: false
-            
-            Log.d("QMME", "PrivacyPolicyHelper state before: $currentState")
-            
-            if (currentState == true) {
-                Log.d("QMME", "privacy policy already accepted, skipping")
-                return
-            }
-            
-            val entity = com.tencent.mobileqq.qmmkv.QMMKV.a(this, "common_mmkv_configurations")
-            if (entity == null) {
-                Log.e("QMME", "QMMKV entity for 'common_mmkv_configurations' is NULL!")
-                return
-            }
-            
-            val result = entity.v("privacypolicy_state", "1")
-            Log.d("QMME", "set privacypolicy_state='1', returned: ${result?.javaClass?.simpleName ?: "null"}")
-            
-            // Verify the write
-            val verifyValue = entity.o("privacypolicy_state", "")
-            Log.d("QMME", "verify privacypolicy_state value: '$verifyValue'")
-            
-            if (verifyValue == "1") {
-                Log.i("QMME", "✓ Privacy policy state successfully set to '1'")
-            } else {
-                Log.e("QMME", "✗ Privacy policy state verification FAILED: expected '1', got '$verifyValue'")
-            }
-            
-        } catch (e: Exception) {
-            Log.e("QMME", "ensurePrivacyPolicyAccepted failed", e)
-            e.printStackTrace()
-        }
     }
 
     private fun isMsfProcess(): Boolean {

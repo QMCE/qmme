@@ -81,10 +81,11 @@ import com.highcapable.hikage.annotation.Hikagable
 class MainHikagable(
     private val context: Context,
     private val account: SimpleAccount,
-    private val onLogout: () -> Unit,
-    private val onForceExit: () -> Unit,
+    private val onRequestLogout: () -> Unit,
+    private val onRequestForceExit: () -> Unit,
+    private val onOpenSettings: () -> Unit,
     private val onOpenChat: (com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo) -> Unit,
-    private val onOpenContactChat: (ContactsViewModel.UiBuddy) -> Unit,
+    private val onOpenContactProfile: (ContactsViewModel.UiBuddy) -> Unit,
 ) : HikageScreen {
     private lateinit var appBar: AppBarLayout
     private lateinit var collapsingToolbar: CollapsingToolbarLayout
@@ -126,7 +127,7 @@ class MainHikagable(
         boundContactsViewModel = contactsViewModel
 
         chatRecyclerView.adapter = ConversationAdapter(chatViewModel, onOpenChat)
-        contactsRecyclerView.adapter = ContactsAdapter(onOpenContactChat)
+        contactsRecyclerView.adapter = ContactsAdapter(onOpenContactProfile)
 
         owner.launch {
             owner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -643,9 +644,10 @@ class MainHikagable(
                     subtitle = account.uin.toString(),
                 )
                 row(
-                    icon = context.getDrawableCompat(R.drawable.ic_power),
-                    title = "登录存储",
-                    subtitle = "已启用 · 登录状态保存在本机",
+                    icon = context.getDrawableCompat(R.drawable.ic_settings),
+                    title = "设置",
+                    subtitle = "交互、安全与本地数据",
+                    onClick = onOpenSettings,
                 )
             }
             buildSectionLabel("危险区域")
@@ -655,14 +657,14 @@ class MainHikagable(
                     title = "退出登录",
                     subtitle = "清除本机登录状态并返回登录页",
                     destructive = true,
-                    onClick = onLogout,
+                    onClick = onRequestLogout,
                 )
                 row(
                     icon = context.getDrawableCompat(R.drawable.ic_power),
                     title = "强制退出应用",
                     subtitle = "立即结束进程，不保存当前会话",
                     destructive = true,
-                    onClick = onForceExit,
+                    onClick = onRequestForceExit,
                 )
             }
         }

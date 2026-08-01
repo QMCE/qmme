@@ -1,7 +1,10 @@
 package rj.qmme.ui
 
 import android.content.Context
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
+import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -48,6 +51,8 @@ import com.highcapable.hikage.widget.com.google.android.material.textview.Materi
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import rj.qmme.R
+import rj.qmme.data.AppSettings
+import rj.qmme.data.chat.DraftStore
 import rj.qmme.ui.hikage.FilledIconButton
 import rj.qmme.ui.hikage.IconButton
 import rj.qmme.ui.hikage.TonalIconButton
@@ -61,6 +66,9 @@ class ChatDetailHikagable(
     private val onBack: () -> Unit,
     private val onPickImage: () -> Unit,
     onOpenImage: (ChatDetailViewModel.UiImage, View?) -> Unit,
+    private val onOpenSettings: () -> Unit,
+    private val onOpenSearch: () -> Unit,
+    private val onForwardMessage: (ChatDetailViewModel.UiMessage) -> Unit,
 ) : HikageScreen {
     private lateinit var toolbar: MaterialToolbar
     private lateinit var statusCard: MaterialCardView
@@ -70,6 +78,8 @@ class ChatDetailHikagable(
     private lateinit var recyclerView: RecyclerView
     private lateinit var emptyView: View
     private lateinit var jumpToLatest: MaterialButton
+    private lateinit var replyBar: MaterialCardView
+    private lateinit var replySummary: MaterialTextView
     private lateinit var input: TextInputEditText
     private lateinit var imageButton: MaterialButton
     private lateinit var sendButton: MaterialButton
@@ -77,6 +87,7 @@ class ChatDetailHikagable(
     private var panelOpen = false
     private var panelAnimator: SpringAnimation? = null
     private var messageActionHandler: ((ChatDetailViewModel.UiMessage) -> Unit)? = null
+    private var draftWatcher: TextWatcher? = null
     private val adapter = MessageAdapter(
         isGroup = target.chatType == 2,
         onImageClick = onOpenImage,
@@ -109,6 +120,7 @@ class ChatDetailHikagable(
                 buildToolbar()
                 buildStatusCard()
                 buildMessageArea()
+                buildReplyBar()
                 buildComposer()
                 buildAttachmentPanel()
                 LinearLayout(
@@ -138,10 +150,91 @@ class ChatDetailHikagable(
                     context,
                     com.google.android.material.R.style.TextAppearance_Material3_BodySmall,
                 )
+                menu.clear()
+                menu.add(Menu.NONE, MENU_SEARCH, 0, "搜索").apply {
+                    setIcon(R.drawable.ic_search)
+                    setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
+                }
+                menu.add(Menu.NONE, MENU_SETTINGS, 1, "会话设置").apply {
+                    setIcon(R.drawable.ic_settings)
+                    setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
+                }
+                setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        MENU_SEARCH -> {
+                            onOpenSearch()
+                            true
+                        }
+                        MENU_SETTINGS -> {
+                            onOpenSettings()
+                            true
+                        }
+                        else -> false
+                    }
+                }
                 EdgeToEdgeInsets.applyHorizontalInsets(this)
             },
         )
         return toolbar
+    }
+
+    @Hikagable
+    private fun Hikage.Performer<LinearLayout.LayoutParams>.buildReplyBar(): MaterialCardView {
+        replyBar = MaterialCardView(
+            lparams = LayoutParams(widthMatchParent = true) {
+                marginStart = dp(12)
+                marginEnd = dp(12)
+                topMargin = dp(4)
+            },
+            init = {
+                visibility = View.GONE
+                radius = dp(16).toFloat()
+                strokeWidth = 0
+                cardElevation = 0f
+                setCardBackgroundColor(
+                    MaterialColors.getColor(
+                        this,
+                        com.google.android.material.R.attr.colorSecondaryContainer,
+                    ),
+                )
+                EdgeToEdgeInsets.applyHorizontalInsets(this)
+            },
+        ) {
+            LinearLayout(
+                lparams = LayoutParams(widthMatchParent = true),
+                init = {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(12), dp(8), dp(4), dp(8))
+                },
+            ) {
+                replySummary = MaterialTextView(
+                    lparams = LayoutParams(width = 0, height = ViewGroup.LayoutParams.WRAP_CONTENT) {
+                        weight = 1f
+                    },
+                    init = {
+                        TextViewCompat.setTextAppearance(
+                            this,
+                            com.google.android.material.R.style.TextAppearance_Material3_BodyMedium,
+                        )
+                        maxLines = 2
+                        textColor = MaterialColors.getColor(
+                            this,
+                            com.google.android.material.R.attr.colorOnSecondaryContainer,
+                        )
+                    },
+                )
+                IconButton(
+                    lparams = LayoutParams(width = dp(40), height = dp(40)),
+                    init = {
+                        icon = drawableResource(R.drawable.ic_close)
+                        contentDescription = "取消回复"
+                        setOnClickListener { boundViewModel?.clearPendingReply() }
+                    },
+                )
+            }
+        }
+        return replyBar
     }
 
     @Hikagable
@@ -386,7 +479,10 @@ class ChatDetailHikagable(
                         isSingleLine = false
                         setPadding(dp(6), dp(12), dp(6), dp(12))
                         setOnEditorActionListener { _, actionId, _ ->
-                            if (actionId == EditorInfo.IME_ACTION_SEND) {
+                            if (actionId == EditorInfo.IME_ACTION_SEND ||
+                                (AppSettings.enterToSend(context) &&
+                                    actionId == EditorInfo.IME_ACTION_DONE)
+                            ) {
                                 performSend()
                                 true
                             } else {
@@ -394,6 +490,11 @@ class ChatDetailHikagable(
                             }
                         }
                         setOnClickListener { hideAttachmentPanel() }
+                        if (AppSettings.enterToSend(context)) {
+                            imeOptions = EditorInfo.IME_ACTION_SEND
+                            isSingleLine = true
+                            maxLines = 1
+                        }
                     },
                 )
                 // Filled icon button: the M3 Expressive style supplies the
@@ -538,6 +639,25 @@ class ChatDetailHikagable(
         statusCard.setOnClickListener { viewModel.retry() }
         statusCard.contentDescription = "聊天状态，点按重试"
         swipeRefresh.setOnRefreshListener { viewModel.loadOlder() }
+
+        val draft = DraftStore.load(context, target.peerUid, target.chatType)
+        if (draft.isNotBlank() && input.text.isNullOrEmpty()) {
+            input.setText(draft)
+            input.setSelection(draft.length)
+        }
+        draftWatcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                DraftStore.save(
+                    context,
+                    target.peerUid,
+                    target.chatType,
+                    s?.toString().orEmpty(),
+                )
+            }
+        }.also(input::addTextChangedListener)
+
         owner.launch {
             owner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
@@ -545,14 +665,7 @@ class ChatDetailHikagable(
                         val previous = adapter.currentList
                         val tailChanged =
                             previous.lastOrNull()?.stableId != messages.lastOrNull()?.stableId
-                        // Sampled before submit; the answer changes once the new
-                        // rows are laid out.
                         val wasNearBottom = isNearBottom()
-                        // Follow the conversation only when the user is part of
-                        // it: first fill, own send, or already reading the tail.
-                        // An incoming message must not yank someone out of the
-                        // history they scrolled up to read — they get the
-                        // jump-to-latest button instead.
                         val shouldFollowBottom = previous.isEmpty() ||
                                 (tailChanged &&
                                         (wasNearBottom || messages.lastOrNull()?.outgoing == true))
@@ -562,9 +675,6 @@ class ChatDetailHikagable(
                             }
                             updateEmptyState()
                             updateJumpToLatest()
-                            // Reveal only once the list has actually been laid
-                            // out at the bottom, so the fade shows the settled
-                            // conversation rather than it scrolling into place.
                             if (messages.isNotEmpty()) revealMessages()
                         }
                     }
@@ -580,8 +690,6 @@ class ChatDetailHikagable(
                         lastLoading = loading
                         Motion.fadeVisibility(statusProgress, loading)
                         updateEmptyState()
-                        // An empty chat never delivers messages, so settling the
-                        // load is the other signal that the screen is ready.
                         if (!loading) revealMessages()
                     }
                 }
@@ -597,12 +705,20 @@ class ChatDetailHikagable(
                 }
                 launch {
                     viewModel.sending.collectLatest { sending ->
-                        // Only the send action locks. Disabling the EditText
-                        // would drop focus and close the keyboard on every
-                        // send; sendText() already rejects re-entry, and the
-                        // user should be able to type the next message while
-                        // this one is in flight.
                         sendButton.isEnabled = !sending
+                    }
+                }
+                launch {
+                    viewModel.pendingReply.collectLatest { reply ->
+                        if (reply == null) {
+                            Motion.fadeVisibility(replyBar, visible = false)
+                        } else {
+                            replySummary.text = "回复 ${reply.senderName}：${reply.summary}"
+                            Motion.fadeVisibility(replyBar, visible = true)
+                            input.requestFocus()
+                            context.getSystemService(InputMethodManager::class.java)
+                                ?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+                        }
                     }
                 }
             }
@@ -664,6 +780,22 @@ class ChatDetailHikagable(
         message: ChatDetailViewModel.UiMessage,
     ) {
         val actions = buildList {
+            if (message.messageId > 0L) {
+                add(
+                    MessageActionSheet.Action("回复", R.drawable.ic_reply) {
+                        if (viewModel.prepareReply(message)) {
+                            // Reply bar observes pendingReply.
+                        } else {
+                            context.toast(viewModel.statusText.value.ifBlank { "无法回复" })
+                        }
+                    },
+                )
+                add(
+                    MessageActionSheet.Action("转发", R.drawable.ic_forward) {
+                        onForwardMessage(message)
+                    },
+                )
+            }
             if (message.text.isNotBlank()) {
                 add(
                     MessageActionSheet.Action("复制", R.drawable.ic_copy) {
@@ -707,14 +839,16 @@ class ChatDetailHikagable(
                 )
             }
         }
-        // Segmented-list bottom sheet, not a centered dialog menu.
         MessageActionSheet.show(context, actions)
     }
 
     private fun performSend() {
         val viewModel = boundViewModel ?: return
         val value = input.textToString()
-        if (viewModel.sendText(value)) input.text?.clear()
+        if (viewModel.sendText(value)) {
+            input.text?.clear()
+            DraftStore.clear(context, target.peerUid, target.chatType)
+        }
     }
 
     private fun dp(value: Int): Int =
@@ -722,5 +856,7 @@ class ChatDetailHikagable(
 
     private companion object {
         const val SMOOTH_SCROLL_SPAN = 20
+        const val MENU_SEARCH = 1001
+        const val MENU_SETTINGS = 1002
     }
 }

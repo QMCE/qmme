@@ -7,12 +7,15 @@ import android.provider.OpenableColumns
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
 import com.tencent.qqnt.kernel.nativeinterface.MsgRecord
 import com.tencent.qqnt.kernel.nativeinterface.PicElement
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import com.tencent.qqnt.kernel.nativeinterface.RichMediaFilePathInfo
+import com.tencent.qqnt.kernel.nativeinterface.TextElement
 import com.tencent.qqnt.kernelpublic.nativeinterface.Contact
+import com.tencent.qqnt.msg.api.IMsgUtilApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +29,7 @@ import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicLong
 
-/** First chat-detail slice: latest/history text messages, live updates, read and text send. */
+/** Chat detail: history, live updates, text/image send, reply and forward. */
 class ChatDetailViewModel : ViewModel() {
     data class UiImage(
         val localPaths: List<String>,
@@ -35,16 +38,30 @@ class ChatDetailViewModel : ViewModel() {
         val height: Int,
     )
 
+    data class ReplyPreview(
+        val senderName: String,
+        val summary: String,
+    )
+
+    data class ReplyTarget(
+        val messageId: Long,
+        val senderUid: String,
+        val senderName: String,
+        val summary: String,
+    )
+
     data class UiMessage(
         val stableId: Long,
         val messageId: Long,
         val sequence: Long,
         val timestampSeconds: Long,
         val senderName: String,
+        val senderUid: String,
         val senderUin: Long,
         val outgoing: Boolean,
         val text: String,
         val image: UiImage?,
+        val reply: ReplyPreview?,
         val sendStatus: Int,
     )
 
@@ -101,6 +118,12 @@ class ChatDetailViewModel : ViewModel() {
 
     private val _messageActionInProgress = MutableStateFlow(false)
     val messageActionInProgress: StateFlow<Boolean> = _messageActionInProgress.asStateFlow()
+
+    private val _pendingReply = MutableStateFlow<ReplyTarget?>(null)
+    val pendingReply: StateFlow<ReplyTarget?> = _pendingReply.asStateFlow()
+
+    private val _pendingForwardIds = MutableStateFlow<List<Long>>(emptyList())
+    val pendingForwardIds: StateFlow<List<Long>> = _pendingForwardIds.asStateFlow()
 
     private var openJob: Job? = null
     private var stateJob: Job? = null
@@ -241,28 +264,54 @@ class ChatDetailViewModel : ViewModel() {
         val target = _target.value ?: return false
         val normalized = text.trim()
         if (normalized.isBlank() || _sending.value) return false
+        val reply = _pendingReply.value
         _sending.value = true
         _statusText.value = "正在发送…"
-        val started =
-            repository.sendText(target.toKernelContact(), normalized) { code, errorMessage ->
-                Log.i(
-                    TAG,
-                    "sendText result code=$code msg=$errorMessage " +
-                            "sameTarget=${isCurrentTarget(target)} connected=${repository.isConnected()}",
-                )
-                if (!isCurrentTarget(target)) return@sendText
+
+        val elements = ArrayList<MsgElement>()
+        if (reply != null) {
+            val replyElement = createReplyElement(reply)
+            if (replyElement == null) {
                 _sending.value = false
-                _statusText.value = if (code == 0) {
-                    ""
-                } else {
-                    errorMessage?.takeIf(String::isNotBlank)?.let { "发送失败：$it" } ?: "发送失败"
-                }
+                _statusText.value = "回复消息不可用"
+                return false
             }
+            elements.add(replyElement)
+        }
+        elements.add(
+            MsgElement().apply {
+                elementType = 1
+                elementId = 0L
+                textElement = TextElement().apply {
+                    content = normalized
+                    atType = 0
+                    atUid = 0L
+                    atNtUid = ""
+                }
+            },
+        )
+
+        val started = repository.sendMessage(target.toKernelContact(), elements) { code, errorMessage ->
+            Log.i(
+                TAG,
+                "sendText result code=$code msg=$errorMessage " +
+                        "sameTarget=${isCurrentTarget(target)} connected=${repository.isConnected()}",
+            )
+            if (!isCurrentTarget(target)) return@sendMessage
+            _sending.value = false
+            if (code == 0) {
+                _pendingReply.value = null
+                _statusText.value = ""
+            } else {
+                _statusText.value =
+                    errorMessage?.takeIf(String::isNotBlank)?.let { "发送失败：$it" } ?: "发送失败"
+            }
+        }
         Log.i(
             TAG,
             "sendText started=$started connected=${repository.isConnected()} " +
                     "gen=$sessionGeneration curGen=${RuntimeCoordinator.currentSession()?.generation} " +
-                    "peer=${target.peerUid} type=${target.chatType}",
+                    "peer=${target.peerUid} type=${target.chatType} reply=${reply != null}",
         )
         if (!started) {
             _sending.value = false
@@ -271,6 +320,93 @@ class ChatDetailViewModel : ViewModel() {
         }
         return started
     }
+
+    fun prepareReply(message: UiMessage): Boolean {
+        if (message.messageId <= 0L) {
+            _statusText.value = "这条消息暂时无法回复"
+            return false
+        }
+        val target = ReplyTarget(
+            messageId = message.messageId,
+            senderUid = message.senderUid.ifBlank { message.senderUin.toString() },
+            senderName = message.senderName.ifBlank { "对方" },
+            summary = message.text.replace('\n', ' ').take(80).ifBlank {
+                if (message.image != null) "[图片]" else "[消息]"
+            },
+        )
+        if (createReplyElement(target) == null) {
+            _statusText.value = "回复消息不可用"
+            return false
+        }
+        _pendingReply.value = target
+        return true
+    }
+
+    fun clearPendingReply() {
+        _pendingReply.value = null
+    }
+
+    fun prepareForward(message: UiMessage): Boolean {
+        if (message.messageId <= 0L) {
+            _statusText.value = "这条消息暂时无法转发"
+            return false
+        }
+        _pendingForwardIds.value = listOf(message.messageId)
+        return true
+    }
+
+    fun clearPendingForward() {
+        _pendingForwardIds.value = emptyList()
+    }
+
+    fun forwardPendingTo(chatType: Int, peerUid: String): Boolean {
+        val from = _target.value ?: return false
+        val ids = _pendingForwardIds.value
+        if (ids.isEmpty() || peerUid.isBlank()) return false
+        if (_messageActionInProgress.value) return false
+        _messageActionInProgress.value = true
+        _statusText.value = "正在转发…"
+        val to = Contact(chatType, peerUid, "")
+        val started = repository.forwardMessages(
+            ids,
+            from.toKernelContact(),
+            to,
+        ) { code, errorMessage ->
+            if (!isCurrentTarget(from)) return@forwardMessages
+            _messageActionInProgress.value = false
+            _pendingForwardIds.value = emptyList()
+            _statusText.value = if (code == 0) {
+                "已转发"
+            } else {
+                errorMessage?.takeIf(String::isNotBlank)?.let { "转发失败：$it" } ?: "转发失败"
+            }
+        }
+        if (!started) {
+            _messageActionInProgress.value = false
+            _statusText.value = "消息服务不可用，转发失败"
+        }
+        return started
+    }
+
+    fun searchLoaded(query: String): List<UiMessage> {
+        val needle = query.trim()
+        if (needle.isEmpty()) return emptyList()
+        return _messages.value.filter {
+            it.text.contains(needle, ignoreCase = true) ||
+                    it.senderName.contains(needle, ignoreCase = true)
+        }
+    }
+
+    private fun createReplyElement(target: ReplyTarget): MsgElement? = runCatching {
+        QRoute.api(IMsgUtilApi::class.java)
+            .createReplyElement(target.messageId)
+            .also { element ->
+                element.replyElement?.senderUid = target.senderUid.toLongOrNull() ?: 0L
+                element.replyElement?.senderUidStr = target.senderUid
+            }
+    }.onFailure {
+        Log.w(TAG, "create reply element failed msg=${target.messageId}", it)
+    }.getOrNull()
 
     fun sendImage(context: Context, uri: Uri): Boolean {
         val target = _target.value ?: return false
@@ -334,6 +470,7 @@ class ChatDetailViewModel : ViewModel() {
                 messageTable[message.stableId] = message.copy(
                     text = "你撤回了一条消息",
                     image = null,
+                    reply = null,
                     sendStatus = 2,
                 )
                 publishMessages()
@@ -416,6 +553,8 @@ class ChatDetailViewModel : ViewModel() {
         _loadingOlder.value = false
         _sending.value = false
         _messageActionInProgress.value = false
+        _pendingReply.value = null
+        _pendingForwardIds.value = emptyList()
         if (clearTarget) {
             _target.value = null
             messageTable.clear()
@@ -513,6 +652,22 @@ class ChatDetailViewModel : ViewModel() {
             msgSeq > 0L -> msgSeq
             else -> syntheticIds.getAndDecrement()
         }
+        val elems = elements.orEmpty()
+        val reply = elems.firstNotNullOfOrNull { it.replyElement }?.let { reply ->
+            val summary = reply.sourceMsgText?.takeIf { it.isNotBlank() }
+                ?: if (reply.sourceMsgIsIncPic) "[图片]" else "原消息"
+            ReplyPreview(
+                senderName = reply.anonymousNickName?.takeIf { it.isNotBlank() }
+                    ?: reply.senderUidStr?.takeIf { it.isNotBlank() && it != "0" }
+                    ?: reply.senderUid?.takeIf { it > 0L }?.toString()
+                    ?: "对方",
+                summary = summary.replace('\n', ' ').take(80),
+            )
+        }
+        val body = elems.asSequence()
+            .filter { it.replyElement == null }
+            .joinToString(separator = "") { it.displayText() }
+            .ifBlank { if (reply != null) "" else "[暂不支持的消息]" }
         return UiMessage(
             stableId = stable,
             messageId = msgId,
@@ -525,11 +680,12 @@ class ChatDetailViewModel : ViewModel() {
                     }
                 }
             },
+            senderUid = senderUid.orEmpty(),
             outgoing = selfUin > 0L && senderUin == selfUin,
             senderUin = senderUin,
-            text = elements.orEmpty().joinToString(separator = "") { it.displayText() }
-                .ifBlank { "[暂不支持的消息]" },
-            image = elements.orEmpty().firstNotNullOfOrNull { it.picElement }?.toUiImage(),
+            text = body,
+            image = elems.firstNotNullOfOrNull { it.picElement }?.toUiImage(),
+            reply = reply,
             sendStatus = sendStatus,
         )
     }

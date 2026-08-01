@@ -296,6 +296,33 @@ class ChatRepository {
             .getOrDefault(false)
     }
 
+    /**
+     * Native forward using message ids. Prefer this over rebuilding elements so
+     * the kernel keeps original rich-media metadata.
+     */
+    fun forwardMessages(
+        messageIds: Collection<Long>,
+        from: Contact,
+        to: Contact,
+        callback: (errorCode: Int, errorMessage: String?) -> Unit,
+    ): Boolean {
+        val ids = messageIds.filter { it > 0L }.distinct()
+        if (ids.isEmpty()) return false
+        val service = KernelBridge.getKernelMsgService() ?: return false
+        return runCatching {
+            service.forwardMsg(
+                ArrayList(ids),
+                from,
+                arrayListOf(to),
+                hashMapOf(),
+            ) { errorCode, errorMessage, _ ->
+                callback(errorCode, errorMessage)
+            }
+            true
+        }.onFailure { Log.w(TAG, "forward messages failed ids=$ids", it) }
+            .getOrDefault(false)
+    }
+
     fun stopListening() {
         val id = listenerId
         val service = listenerService

@@ -16,10 +16,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.repeatOnLifecycle
 import com.highcapable.betterandroid.ui.extension.component.launch
+import com.highcapable.betterandroid.ui.extension.view.toast
 import com.tencent.qphone.base.remote.SimpleAccount
 import mqq.app.Constants
 import rj.qmme.QmmeApp
+import rj.qmme.data.AppSettings
 import rj.qmme.data.LoginPrefs
+import rj.qmme.data.chat.ChatSettingsRepository
+import rj.qmme.data.chat.DraftStore
 import rj.qmme.ui.navigation.ViewNavigator
 import rj.qmme.viewmodel.AuthViewModel
 import rj.qmme.viewmodel.ChatDetailViewModel
@@ -33,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var screenHost: FrameLayout
     private lateinit var navigator: ViewNavigator
     private var pendingImageViewModel: ChatDetailViewModel? = null
+    private var activeChatViewModel: ChatDetailViewModel? = null
     private val imagePicker =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             val viewModel = pendingImageViewModel
@@ -40,9 +45,6 @@ class MainActivity : AppCompatActivity() {
             if (uri != null && viewModel != null) viewModel.sendImage(this, uri)
         }
 
-    // READ_PHONE_STATE feeds the QIMEI/Beacon device fingerprint. Request it before
-    // login so QQBeaconPrivateInfo can read the device identifier; without it QIMEI
-    // registration fails and the server instantly kicks the session.
     private val phoneStatePermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             Log.i("QMME", "READ_PHONE_STATE permission granted=$granted")
@@ -60,12 +62,6 @@ class MainActivity : AppCompatActivity() {
         LoginPrefs.loadAccount(this)?.let(::showLoggedIn) ?: showLogin()
     }
 
-    /**
-     * Request READ_PHONE_STATE at runtime. This dangerous permission gates the
-     * device identifier the QIMEI/Beacon SDK needs to register a stable device
-     * fingerprint with the backend. Requested early (before login) so the
-     * fingerprint is ready by the time WtLogin/MSF attach QIMEI to SSO packets.
-     */
     private fun ensurePhoneStatePermission() {
         val alreadyGranted = ContextCompat.checkSelfPermission(
             this,
@@ -78,7 +74,6 @@ class MainActivity : AppCompatActivity() {
         phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
     }
 
-    /** Mirrors the official logout reason observer using the native lifecycle. */
     private fun observeOfficialLogout() {
         launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -122,26 +117,11 @@ class MainActivity : AppCompatActivity() {
         val mainScreen = MainHikagable(
             context = this,
             account = account,
-            onLogout = {
-                (application as? QmmeApp)?.clearLocalLoginState()
-                QmmeApp.forceExit(this)
-            },
-            onForceExit = { QmmeApp.forceExit(this) },
+            onRequestLogout = { confirmLogout(account) },
+            onRequestForceExit = { confirmForceExit() },
+            onOpenSettings = { openSettings() },
             onOpenChat = { openChat(account, ChatDetailViewModel.ChatTarget.fromRecent(it)) },
-            onOpenContactChat = { buddy ->
-                openChat(
-                    account,
-                    ChatDetailViewModel.ChatTarget(
-                        chatType = 1,
-                        peerUid = buddy.uid.ifBlank { buddy.uin.toString() },
-                        peerUin = buddy.uin,
-                        title = buddy.remark.ifBlank { buddy.nick }
-                            .ifBlank { buddy.uin.toString() },
-                        avatarPath = buddy.avatarPath,
-                        avatarUrl = buddy.avatarUrls.firstOrNull().orEmpty(),
-                    ),
-                )
-            },
+            onOpenContactProfile = { buddy -> openProfile(account, buddy) },
         )
         val hikage = mainScreen.hikage.create(this, screenHost, false)
         val entry = ViewNavigator.Entry(route = ROUTE_MAIN, view = hikage.root)
@@ -153,30 +133,280 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun confirmLogout(account: SimpleAccount) {
+        if (!AppSettings.confirmLogout(this)) {
+            performLogout()
+            return
+        }
+        val screen = ConfirmActionHikagable(
+            context = this,
+            title = "退出登录？",
+            message = "将清除本机登录状态并返回登录页。账号 ${account.uin} 需要重新扫码登录。",
+            confirmLabel = "退出登录",
+            destructive = true,
+            onBack = { navigator.pop() },
+            onConfirm = {
+                navigator.pop()
+                performLogout()
+            },
+        )
+        pushScreen(ROUTE_CONFIRM, screen)
+    }
+
+    private fun confirmForceExit() {
+        val screen = ConfirmActionHikagable(
+            context = this,
+            title = "强制退出应用？",
+            message = "将立即结束进程。未发送的草稿会保留在本机，但当前会话不会继续。",
+            confirmLabel = "强制退出",
+            destructive = true,
+            onBack = { navigator.pop() },
+            onConfirm = { QmmeApp.forceExit(this) },
+        )
+        pushScreen(ROUTE_CONFIRM, screen)
+    }
+
+    private fun performLogout() {
+        (application as? QmmeApp)?.clearLocalLoginState()
+        QmmeApp.forceExit(this)
+    }
+
+    private fun openSettings() {
+        val screen = SettingsHikagable(
+            context = this,
+            onBack = { navigator.pop() },
+            onOpenAbout = { openAbout() },
+            onClearDrafts = {
+                DraftStore.clearAll(this)
+                toast("已清除本地草稿")
+            },
+            enterToSend = AppSettings.enterToSend(this),
+            onEnterToSendChanged = { AppSettings.setEnterToSend(this, it) },
+            confirmLogout = AppSettings.confirmLogout(this),
+            onConfirmLogoutChanged = { AppSettings.setConfirmLogout(this, it) },
+        )
+        pushScreen(ROUTE_SETTINGS, screen)
+    }
+
+    private fun openAbout() {
+        val screen = AboutHikagable(
+            context = this,
+            onBack = { navigator.pop() },
+        )
+        pushScreen(ROUTE_ABOUT, screen)
+    }
+
+    private fun openProfile(account: SimpleAccount, buddy: ContactsViewModel.UiBuddy) {
+        val title = buddy.remark.ifBlank { buddy.nick }.ifBlank { buddy.uin.toString() }
+        val screen = ProfileHikagable(
+            context = this,
+            title = title,
+            uid = buddy.uid,
+            uin = buddy.uin,
+            avatarPath = buddy.avatarPath,
+            avatarUrl = buddy.avatarUrls.firstOrNull().orEmpty(),
+            subtitle = buddy.categoryName.ifBlank { "好友" },
+            onBack = { navigator.pop() },
+            onOpenChat = {
+                navigator.pop()
+                openChat(
+                    account,
+                    ChatDetailViewModel.ChatTarget(
+                        chatType = 1,
+                        peerUid = buddy.uid.ifBlank { buddy.uin.toString() },
+                        peerUin = buddy.uin,
+                        title = title,
+                        avatarPath = buddy.avatarPath,
+                        avatarUrl = buddy.avatarUrls.firstOrNull().orEmpty(),
+                    ),
+                )
+            },
+        )
+        val hikage = screen.hikage.create(this, screenHost, false)
+        val entry = ViewNavigator.Entry(
+            route = ROUTE_PROFILE,
+            view = hikage.root,
+            disposeAction = screen::dispose,
+        )
+        navigator.push(entry)
+        screen.bind()
+    }
+
     private fun openChat(account: SimpleAccount, target: ChatDetailViewModel.ChatTarget) {
         if (target.peerUid.isBlank()) {
             Log.w("QMME", "ui: refusing chat target without peer uid title=${target.title}")
             return
         }
         val viewModel = ViewModelProvider(this)[ChatDetailViewModel::class.java]
+        activeChatViewModel = viewModel
         val screen = ChatDetailHikagable(
             context = this,
             target = target,
-            onBack = { navigator.pop() },
+            onBack = {
+                activeChatViewModel = null
+                navigator.pop()
+            },
             onPickImage = {
                 pendingImageViewModel = viewModel
                 imagePicker.launch("image/*")
             },
             onOpenImage = { image, sourceView -> openImagePreview(image, sourceView) },
+            onOpenSettings = { openChatSettings(account, target) },
+            onOpenSearch = { openChatSearch(viewModel) },
+            onForwardMessage = { message ->
+                if (viewModel.prepareForward(message)) {
+                    openContactPickerForForward(viewModel)
+                } else {
+                    toast(viewModel.statusText.value.ifBlank { "无法转发" })
+                }
+            },
         )
         val hikage = screen.hikage.create(this, screenHost, false)
         val entry = ViewNavigator.Entry(
             route = ROUTE_CHAT,
             view = hikage.root,
-            disposeAction = { viewModel.closeChat() },
+            disposeAction = {
+                activeChatViewModel = null
+                viewModel.closeChat()
+            },
         )
         navigator.push(entry)
         screen.bind(entry.lifecycleOwner, viewModel, account.uin.toString())
+    }
+
+    private fun openChatSettings(account: SimpleAccount, target: ChatDetailViewModel.ChatTarget) {
+        val isGroup = target.chatType == 2
+        val screen = ChatSettingsHikagable(
+            context = this,
+            targetTitle = target.title,
+            isGroup = isGroup,
+            onBack = { navigator.pop() },
+            onSetTop = { enabled, done ->
+                val started = ChatSettingsRepository.setTop(
+                    chatType = target.chatType,
+                    peerUid = target.peerUid,
+                    peerUin = target.peerUin,
+                    enabled = enabled,
+                    callback = done,
+                )
+                if (!started) done(false, "服务不可用")
+            },
+            onSetMuted = { muted, done ->
+                val started = ChatSettingsRepository.setMuted(
+                    chatType = target.chatType,
+                    peerUid = target.peerUid,
+                    peerUin = target.peerUin,
+                    muted = muted,
+                    callback = done,
+                )
+                if (!started) done(false, "服务不可用")
+            },
+            onOpenMembers = if (isGroup) {
+                {
+                    navigator.pop()
+                    openGroupMembers(account, target)
+                }
+            } else {
+                null
+            },
+            onOpenProfile = if (!isGroup) {
+                {
+                    navigator.pop()
+                    openProfile(
+                        account,
+                        ContactsViewModel.UiBuddy(
+                            uid = target.peerUid,
+                            uin = target.peerUin,
+                            nick = target.title,
+                            remark = target.title,
+                            avatarPath = target.avatarPath,
+                            avatarUrls = listOfNotNull(target.avatarUrl.takeIf { it.isNotBlank() }),
+                            categoryId = 0,
+                            categoryName = "好友",
+                        ),
+                    )
+                }
+            } else {
+                null
+            },
+        )
+        pushScreen(ROUTE_CHAT_SETTINGS, screen)
+    }
+
+    private fun openGroupMembers(account: SimpleAccount, target: ChatDetailViewModel.ChatTarget) {
+        val groupCode = target.peerUin.takeIf { it > 0L }
+            ?: target.peerUid.toLongOrNull()
+            ?: 0L
+        val screen = GroupMembersHikagable(
+            context = this,
+            groupCode = groupCode,
+            groupTitle = target.title,
+            onBack = { navigator.pop() },
+            onOpenMember = { uid, uin, name, avatarPath ->
+                openProfile(
+                    account,
+                    ContactsViewModel.UiBuddy(
+                        uid = uid,
+                        uin = uin,
+                        nick = name,
+                        remark = name,
+                        avatarPath = avatarPath,
+                        avatarUrls = emptyList(),
+                        categoryId = 0,
+                        categoryName = "群成员",
+                    ),
+                )
+            },
+        )
+        val hikage = screen.hikage.create(this, screenHost, false)
+        val entry = ViewNavigator.Entry(route = ROUTE_GROUP_MEMBERS, view = hikage.root)
+        navigator.push(entry)
+        screen.bind(entry.lifecycleOwner)
+    }
+
+    private fun openChatSearch(viewModel: ChatDetailViewModel) {
+        val screen = ChatSearchHikagable(
+            context = this,
+            onBack = { navigator.pop() },
+            onResultClick = { messageId ->
+                navigator.pop()
+                toast("已定位消息")
+                // Jump support can be extended once MessageAdapter exposes scroll-to-id.
+                Log.d("QMME", "search result messageId=$messageId")
+            },
+            searchFn = viewModel::searchLoaded,
+        )
+        val hikage = screen.hikage.create(this, screenHost, false)
+        val entry = ViewNavigator.Entry(
+            route = ROUTE_CHAT_SEARCH,
+            view = hikage.root,
+            disposeAction = screen::dispose,
+        )
+        navigator.push(entry)
+    }
+
+    private fun openContactPickerForForward(viewModel: ChatDetailViewModel) {
+        val contactsViewModel = ViewModelProvider(this)[ContactsViewModel::class.java]
+        val screen = ContactPickerHikagable(
+            context = this,
+            title = "转发到…",
+            onBack = {
+                viewModel.clearPendingForward()
+                navigator.pop()
+            },
+            onPick = { chatType, peerUid, title ->
+                navigator.pop()
+                if (viewModel.forwardPendingTo(chatType, peerUid)) {
+                    toast("正在转发到 $title")
+                } else {
+                    toast(viewModel.statusText.value.ifBlank { "转发失败" })
+                }
+            },
+        )
+        val hikage = screen.hikage.create(this, screenHost, false)
+        val entry = ViewNavigator.Entry(route = ROUTE_CONTACT_PICKER, view = hikage.root)
+        navigator.push(entry)
+        screen.bind(entry.lifecycleOwner, contactsViewModel)
     }
 
     private fun openImagePreview(image: ChatDetailViewModel.UiImage, sourceView: View?) {
@@ -195,11 +425,11 @@ class MainActivity : AppCompatActivity() {
         screen.bind()
     }
 
-    /**
-     * M3 container transform: the tapped bubble image expands into the
-     * full-screen preview. Falls back to the navigator's default shared-axis
-     * transition when the source view is gone (e.g. recycled off-screen).
-     */
+    private fun pushScreen(route: String, screen: HikageScreen) {
+        val hikage = screen.hikage.create(this, screenHost, false)
+        navigator.push(ViewNavigator.Entry(route = route, view = hikage.root))
+    }
+
     private fun imageExpandTransform(source: View?, endView: View): MaterialContainerTransform? {
         source ?: return null
         return MaterialContainerTransform().apply {
@@ -228,5 +458,13 @@ class MainActivity : AppCompatActivity() {
         const val ROUTE_MAIN = "main"
         const val ROUTE_CHAT = "chat"
         const val ROUTE_IMAGE = "image"
+        const val ROUTE_SETTINGS = "settings"
+        const val ROUTE_ABOUT = "about"
+        const val ROUTE_CONFIRM = "confirm"
+        const val ROUTE_PROFILE = "profile"
+        const val ROUTE_CHAT_SETTINGS = "chat_settings"
+        const val ROUTE_GROUP_MEMBERS = "group_members"
+        const val ROUTE_CHAT_SEARCH = "chat_search"
+        const val ROUTE_CONTACT_PICKER = "contact_picker"
     }
 }
