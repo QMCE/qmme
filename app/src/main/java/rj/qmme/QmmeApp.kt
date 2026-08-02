@@ -782,6 +782,62 @@ class QmmeApp : WatchApplicationDelegate() {
             "qimei_startup_$outcome",
             "process=$process beacon=$beaconInitialized qimei36Len=${qimei?.length ?: 0}",
         )
+
+        // The register itself only proceeds in the main process: QIMEI's own
+        // u/a.f() gate (currentProcessName == packageName) makes ai/d.run() take
+        // the broadcast-wait branch in :MSF.  The official Watch graph relies on
+        // the main process to schedule ai/d.run() through ai/e's thread pool after
+        // the SDK reports "QM is null, need update Qm"; in this port the main
+        // process can be preloaded before that dispatch completes, so drive the
+        // register explicitly here when the cached value is still empty.
+        if (isMainProcess() && qimei.isNullOrEmpty()) {
+            forceQimeiRegister(process, loader)
+        }
+    }
+
+    /**
+     * Main-process only: fetch the per-appkey ai/d register runnable from the
+     * SDK's static registry and execute it directly.  This is the same object
+     * ai/e.k() schedules on the QIMEI thread pool when it detects "QM is null";
+     * running it here just removes the pool/timing dependency.  ai/d.run() still
+     * applies its own network check and native register call, so this cannot
+     * produce a value the official path would not.
+     */
+    private fun forceQimeiRegister(process: String, loader: ClassLoader?) {
+        Thread {
+            runCatching {
+                val dClass = Class.forName("com.tencent.qimei.ai.d", true, loader)
+                val mapField = dClass.getDeclaredField("i")
+                mapField.isAccessible = true
+                @Suppress("UNCHECKED_CAST")
+                val registry = mapField.get(null) as? Map<String, Any>
+                val appKey = QIMEI_APP_KEY
+                val dInstance = registry?.get(appKey)
+                if (dInstance == null) {
+                    Log.w("QMME-QIMEI", "force register: no ai/d instance for $appKey process=$process")
+                    return@runCatching
+                }
+                val run = dInstance.javaClass.getMethod("run")
+                Log.i("QMME-QIMEI", "force register: executing ai/d.run() process=$process")
+                run.invoke(dInstance)
+                val after = runCatching { com.tencent.mobileqq.statistics.Qqimei.a() }.getOrNull()
+                Log.i(
+                    "QMME-QIMEI",
+                    "force register: after=${if (after.isNullOrEmpty()) "still-empty" else "len=${after.length}"}",
+                )
+            }.onFailure { error ->
+                val root = (error as? java.lang.reflect.InvocationTargetException)?.targetException ?: error
+                Log.e("QMME-QIMEI", "force register failed process=$process error=${root.javaClass.simpleName}", root)
+                OfflineDiagnostics.record(
+                    this,
+                    "qimei_force_register_failed",
+                    "process=$process error=${root.javaClass.simpleName}",
+                )
+            }
+        }.apply {
+            name = "qmme-force-qimei-register"
+            start()
+        }
     }
 
     private fun runOfficialStartupTask(taskName: String, loader: ClassLoader?, process: String): Boolean {
