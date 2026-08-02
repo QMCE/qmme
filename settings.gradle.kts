@@ -30,4 +30,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "QMME"
 include(":app")
-include(":ntpro")
+//include(":ntpro")
