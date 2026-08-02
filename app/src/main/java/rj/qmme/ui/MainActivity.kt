@@ -29,6 +29,7 @@ import rj.qmme.viewmodel.AuthViewModel
 import rj.qmme.viewmodel.ChatDetailViewModel
 import rj.qmme.viewmodel.ChatListViewModel
 import rj.qmme.viewmodel.ContactsViewModel
+import java.io.File
 
 /** Native phone-first Material 3 Expressive launcher. Compose is intentionally not used. */
 class MainActivity : AppCompatActivity() {
@@ -38,11 +39,23 @@ class MainActivity : AppCompatActivity() {
     private lateinit var navigator: ViewNavigator
     private var pendingImageViewModel: ChatDetailViewModel? = null
     private var activeChatViewModel: ChatDetailViewModel? = null
+    private var pendingVoiceViewModel: ChatDetailViewModel? = null
     private val imagePicker =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             val viewModel = pendingImageViewModel
             pendingImageViewModel = null
             if (uri != null && viewModel != null) viewModel.sendImage(this, uri)
+        }
+
+    private val audioPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val viewModel = pendingVoiceViewModel
+            pendingVoiceViewModel = null
+            if (granted && viewModel != null) {
+                openVoiceRecord(viewModel)
+            } else if (!granted) {
+                toast("需要麦克风权限才能录音")
+            }
         }
 
     private val phoneStatePermissionLauncher =
@@ -252,12 +265,25 @@ class MainActivity : AppCompatActivity() {
             },
             onOpenImage = { image, sourceView -> openImagePreview(image, sourceView) },
             onOpenSettings = { openChatSettings(account, target) },
+            onOpenGroupManagement = if (target.chatType == 2) {
+                { openGroupManagement(target) }
+            } else {
+                null
+            },
             onOpenSearch = { openChatSearch(viewModel) },
+            onOpenVoiceRecord = { requestVoiceRecord(viewModel) },
             onForwardMessage = { message ->
                 if (viewModel.prepareForward(message)) {
                     openContactPickerForForward(viewModel)
                 } else {
                     toast(viewModel.statusText.value.ifBlank { "无法转发" })
+                }
+            },
+            onBatchForward = {
+                if (viewModel.prepareBatchForward()) {
+                    openContactPickerForForward(viewModel)
+                } else {
+                    toast(viewModel.statusText.value.ifBlank { "请先选择消息" })
                 }
             },
         )
@@ -364,6 +390,48 @@ class MainActivity : AppCompatActivity() {
         screen.bind(entry.lifecycleOwner)
     }
 
+    private fun openGroupManagement(target: ChatDetailViewModel.ChatTarget) {
+        val groupCode = target.peerUin.takeIf { it > 0L }
+            ?: target.peerUid.toLongOrNull()
+            ?: 0L
+        if (groupCode <= 0L) {
+            toast("群号无效")
+            return
+        }
+        startActivity(GroupManagementActivity.intent(this, groupCode, target.title))
+    }
+
+    private fun requestVoiceRecord(viewModel: ChatDetailViewModel) {
+        val granted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            openVoiceRecord(viewModel)
+            return
+        }
+        pendingVoiceViewModel = viewModel
+        audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    private fun openVoiceRecord(viewModel: ChatDetailViewModel) {
+        val screen = VoiceRecordHikagable(
+            context = this,
+            onBack = { navigator.pop() },
+            onSendVoice = { file: File, durationMillis: Long, formatType: Int ->
+                navigator.pop()
+                viewModel.sendVoice(file, durationMillis, formatType)
+            },
+        )
+        val hikage = screen.hikage.create(this, screenHost, false)
+        val entry = ViewNavigator.Entry(
+            route = ROUTE_VOICE,
+            view = hikage.root,
+            disposeAction = screen::dispose,
+        )
+        navigator.push(entry)
+    }
+
     private fun openChatSearch(viewModel: ChatDetailViewModel) {
         val screen = ChatSearchHikagable(
             context = this,
@@ -466,5 +534,6 @@ class MainActivity : AppCompatActivity() {
         const val ROUTE_GROUP_MEMBERS = "group_members"
         const val ROUTE_CHAT_SEARCH = "chat_search"
         const val ROUTE_CONTACT_PICKER = "contact_picker"
+        const val ROUTE_VOICE = "voice"
     }
 }

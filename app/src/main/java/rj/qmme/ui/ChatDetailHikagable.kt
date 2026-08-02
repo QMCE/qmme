@@ -44,6 +44,7 @@ import com.highcapable.hikage.widget.android.widget.LinearLayout
 import com.highcapable.hikage.widget.androidx.recyclerview.widget.RecyclerView
 import com.highcapable.hikage.widget.androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.highcapable.hikage.widget.com.google.android.material.appbar.MaterialToolbar
+import com.highcapable.hikage.widget.com.google.android.material.button.MaterialButton
 import com.highcapable.hikage.widget.com.google.android.material.card.MaterialCardView
 import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView
 import com.highcapable.hikage.widget.com.google.android.material.progressindicator.CircularProgressIndicator
@@ -67,8 +68,11 @@ class ChatDetailHikagable(
     private val onPickImage: () -> Unit,
     onOpenImage: (ChatDetailViewModel.UiImage, View?) -> Unit,
     private val onOpenSettings: () -> Unit,
+    private val onOpenGroupManagement: (() -> Unit)?,
     private val onOpenSearch: () -> Unit,
+    private val onOpenVoiceRecord: () -> Unit,
     private val onForwardMessage: (ChatDetailViewModel.UiMessage) -> Unit,
+    private val onBatchForward: () -> Unit,
 ) : HikageScreen {
     private lateinit var toolbar: MaterialToolbar
     private lateinit var statusCard: MaterialCardView
@@ -80,6 +84,9 @@ class ChatDetailHikagable(
     private lateinit var jumpToLatest: MaterialButton
     private lateinit var replyBar: MaterialCardView
     private lateinit var replySummary: MaterialTextView
+    private lateinit var multiSelectBar: LinearLayout
+    private lateinit var multiSelectCount: MaterialTextView
+    private lateinit var composerCard: MaterialCardView
     private lateinit var input: TextInputEditText
     private lateinit var imageButton: MaterialButton
     private lateinit var sendButton: MaterialButton
@@ -92,6 +99,13 @@ class ChatDetailHikagable(
         isGroup = target.chatType == 2,
         onImageClick = onOpenImage,
         onMessageLongClick = { message -> messageActionHandler?.invoke(message) },
+        onVoiceClick = { voice -> boundViewModel?.toggleVoicePlayback(voice) },
+        onMessageClick = { message ->
+            val vm = boundViewModel ?: return@MessageAdapter
+            if (vm.multiSelectMode.value) {
+                vm.toggleSelection(message.messageId)
+            }
+        },
     )
     private var bound = false
     private var lastLoading = false
@@ -121,6 +135,7 @@ class ChatDetailHikagable(
                 buildStatusCard()
                 buildMessageArea()
                 buildReplyBar()
+                buildMultiSelectBar()
                 buildComposer()
                 buildAttachmentPanel()
                 LinearLayout(
@@ -155,7 +170,7 @@ class ChatDetailHikagable(
                     setIcon(R.drawable.ic_search)
                     setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
                 }
-                menu.add(Menu.NONE, MENU_SETTINGS, 1, "会话设置").apply {
+                menu.add(Menu.NONE, MENU_MORE, 1, "更多").apply {
                     setIcon(R.drawable.ic_settings)
                     setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
                 }
@@ -165,8 +180,22 @@ class ChatDetailHikagable(
                             onOpenSearch()
                             true
                         }
-                        MENU_SETTINGS -> {
-                            onOpenSettings()
+                        MENU_MORE -> {
+                            if (target.chatType == 2 && onOpenGroupManagement != null) {
+                                MessageActionSheet.show(
+                                    context,
+                                    listOf(
+                                        MessageActionSheet.Action("群管理", R.drawable.ic_group) {
+                                            onOpenGroupManagement.invoke()
+                                        },
+                                        MessageActionSheet.Action("会话设置", R.drawable.ic_settings) {
+                                            onOpenSettings()
+                                        },
+                                    ),
+                                )
+                            } else {
+                                onOpenSettings()
+                            }
                             true
                         }
                         else -> false
@@ -235,6 +264,74 @@ class ChatDetailHikagable(
             }
         }
         return replyBar
+    }
+
+    @Hikagable
+    private fun Hikage.Performer<LinearLayout.LayoutParams>.buildMultiSelectBar(): LinearLayout {
+        multiSelectBar = LinearLayout(
+            lparams = LayoutParams(widthMatchParent = true),
+            init = {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                visibility = View.GONE
+                setBackgroundColor(
+                    MaterialColors.getColor(
+                        this,
+                        com.google.android.material.R.attr.colorSurfaceContainerHigh,
+                    ),
+                )
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                EdgeToEdgeInsets.applyHorizontalInsets(this)
+            },
+        ) {
+            multiSelectCount = MaterialTextView(
+                lparams = LayoutParams(width = 0, height = ViewGroup.LayoutParams.WRAP_CONTENT) {
+                    weight = 1f
+                },
+                init = {
+                    text = "已选 0 条"
+                    TextViewCompat.setTextAppearance(
+                        this,
+                        com.google.android.material.R.style.TextAppearance_Material3_TitleSmall,
+                    )
+                },
+            )
+            MaterialButton(
+                lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
+                    marginEnd = dp(4)
+                },
+                init = {
+                    text = "转发"
+                    setOnClickListener { onBatchForward() }
+                },
+            )
+            MaterialButton(
+                lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
+                    marginEnd = dp(4)
+                },
+                init = {
+                    text = "删除"
+                    setOnClickListener {
+                        val vm = boundViewModel ?: return@setOnClickListener
+                        val count = vm.selectedMsgIds.value.size
+                        MaterialAlertDialogBuilder(context)
+                            .setTitle("删除选中的 $count 条消息？")
+                            .setMessage("只会从当前聊天记录中删除。")
+                            .setNegativeButton("取消", null)
+                            .setPositiveButton("删除") { _, _ -> vm.batchDeleteSelected() }
+                            .show()
+                    }
+                },
+            )
+            MaterialButton(
+                lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT),
+                init = {
+                    text = "取消"
+                    setOnClickListener { boundViewModel?.exitMultiSelect() }
+                },
+            )
+        }
+        return multiSelectBar
     }
 
     @Hikagable
@@ -409,8 +506,8 @@ class ChatDetailHikagable(
         }
 
     @Hikagable
-    private fun Hikage.Performer<LinearLayout.LayoutParams>.buildComposer(): MaterialCardView =
-        MaterialCardView(
+    private fun Hikage.Performer<LinearLayout.LayoutParams>.buildComposer(): MaterialCardView {
+        composerCard = MaterialCardView(
             lparams = LayoutParams(widthMatchParent = true) {
                 marginStart = dp(12)
                 marginEnd = dp(12)
@@ -513,6 +610,8 @@ class ChatDetailHikagable(
                 )
             }
         }
+        return composerCard
+    }
 
     @Hikagable
     private fun Hikage.Performer<LinearLayout.LayoutParams>.buildAttachmentPanel(): LinearLayout {
@@ -560,6 +659,48 @@ class ChatDetailHikagable(
                     },
                     init = {
                         text = "相册"
+                        TextViewCompat.setTextAppearance(
+                            this,
+                            com.google.android.material.R.style.TextAppearance_Material3_LabelMedium,
+                        )
+                        textColor = MaterialColors.getColor(
+                            this,
+                            com.google.android.material.R.attr.colorOnSurfaceVariant,
+                        )
+                    },
+                )
+            }
+            LinearLayout(
+                lparams = LayoutParams(
+                    width = ViewGroup.LayoutParams.WRAP_CONTENT,
+                    height = ViewGroup.LayoutParams.WRAP_CONTENT,
+                ) {
+                    marginStart = dp(20)
+                },
+                init = {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER_HORIZONTAL
+                },
+            ) {
+                TonalIconButton(
+                    lparams = LayoutParams(width = dp(56), height = dp(56)) {
+                        gravity = Gravity.CENTER_HORIZONTAL
+                    },
+                    init = {
+                        icon = drawableResource(R.drawable.ic_mic)
+                        contentDescription = "语音"
+                        setOnClickListener {
+                            hideAttachmentPanel()
+                            onOpenVoiceRecord()
+                        }
+                    },
+                )
+                MaterialTextView(
+                    lparams = LayoutParams(width = ViewGroup.LayoutParams.WRAP_CONTENT) {
+                        topMargin = dp(6)
+                    },
+                    init = {
+                        text = "语音"
                         TextViewCompat.setTextAppearance(
                             this,
                             com.google.android.material.R.style.TextAppearance_Material3_LabelMedium,
@@ -721,9 +862,40 @@ class ChatDetailHikagable(
                         }
                     }
                 }
+                launch {
+                    viewModel.multiSelectMode.collectLatest { enabled ->
+                        renderMultiSelect(enabled, viewModel.selectedMsgIds.value)
+                    }
+                }
+                launch {
+                    viewModel.selectedMsgIds.collectLatest { ids ->
+                        renderMultiSelect(viewModel.multiSelectMode.value, ids)
+                    }
+                }
             }
         }
         viewModel.openChat(target, accountUin)
+    }
+
+    private fun renderMultiSelect(enabled: Boolean, ids: Set<Long>) {
+        adapter.updateSelection(enabled, ids)
+        Motion.fadeVisibility(multiSelectBar, visible = enabled)
+        Motion.fadeVisibility(composerCard, visible = !enabled)
+        if (enabled) {
+            hideAttachmentPanel()
+            Motion.fadeVisibility(replyBar, visible = false)
+        }
+        multiSelectCount.text = "已选 ${ids.size} 条"
+        if (::toolbar.isInitialized) {
+            toolbar.title = if (enabled) "多选" else target.title
+            toolbar.menu.findItem(MENU_SEARCH)?.isVisible = !enabled
+            toolbar.menu.findItem(MENU_MORE)?.isVisible = !enabled
+            if (enabled) {
+                toolbar.setNavigationOnClickListener { boundViewModel?.exitMultiSelect() }
+            } else {
+                toolbar.setNavigationOnClickListener { onBack() }
+            }
+        }
     }
 
     /**
@@ -779,13 +951,15 @@ class ChatDetailHikagable(
         viewModel: ChatDetailViewModel,
         message: ChatDetailViewModel.UiMessage,
     ) {
+        if (viewModel.multiSelectMode.value) {
+            viewModel.toggleSelection(message.messageId)
+            return
+        }
         val actions = buildList {
             if (message.messageId > 0L) {
                 add(
                     MessageActionSheet.Action("回复", R.drawable.ic_reply) {
-                        if (viewModel.prepareReply(message)) {
-                            // Reply bar observes pendingReply.
-                        } else {
+                        if (!viewModel.prepareReply(message)) {
                             context.toast(viewModel.statusText.value.ifBlank { "无法回复" })
                         }
                     },
@@ -795,8 +969,13 @@ class ChatDetailHikagable(
                         onForwardMessage(message)
                     },
                 )
+                add(
+                    MessageActionSheet.Action("多选", R.drawable.ic_check) {
+                        viewModel.enterMultiSelect(message.messageId)
+                    },
+                )
             }
-            if (message.text.isNotBlank()) {
+            if (message.text.isNotBlank() && message.voice == null) {
                 add(
                     MessageActionSheet.Action("复制", R.drawable.ic_copy) {
                         val clipboard = context.clipboardManager
@@ -857,6 +1036,6 @@ class ChatDetailHikagable(
     private companion object {
         const val SMOOTH_SCROLL_SPAN = 20
         const val MENU_SEARCH = 1001
-        const val MENU_SETTINGS = 1002
+        const val MENU_MORE = 1002
     }
 }

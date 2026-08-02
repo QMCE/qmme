@@ -64,6 +64,10 @@
             android:exported="false"
             android:label="Crash"
             android:theme="@style/Theme.QMME" />
+        <activity
+            android:name=".ui.GroupManagementActivity"
+            android:exported="false"
+            android:theme="@style/Theme.QMME" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

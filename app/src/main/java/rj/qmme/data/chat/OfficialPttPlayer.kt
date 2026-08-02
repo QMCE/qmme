@@ -1,0 +1,134 @@
+package rj.qmme.data.chat
+
+import android.util.Log
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import java.util.concurrent.ConcurrentHashMap
+
+object OfficialPttPlayer {
+    private const val TAG = "QMME-Ptt"
+
+    private val ownedMessageIds = ConcurrentHashMap.newKeySet<Long>()
+    private val listeners = ConcurrentHashMap<Long, OfficialPttPlayerListenerBridge>()
+    private val _states = MutableStateFlow<Map<Long, PttPlaybackState>>(emptyMap())
+    val states: StateFlow<Map<Long, PttPlaybackState>> = _states
+
+    fun toggle(
+        media: PttMediaRef,
+        onMissingPath: (() -> Boolean)? = null,
+    ) {
+        if (media.messageId <= 0L) {
+            publish(media.messageId) {
+                it.copy(phase = PttPlaybackPhase.Failed, error = "语音消息无效")
+            }
+            return
+        }
+        val path = RichMediaRepository.resolvePttPath(media)
+        if (path.isNullOrBlank()) {
+            val requested = runCatching { onMissingPath?.invoke() == true }.getOrDefault(false)
+            publish(media.messageId) {
+                if (requested) {
+                    it.copy(
+                        phase = PttPlaybackPhase.Idle,
+                        error = "正在下载语音，请稍后再试",
+                        durationMillis = maxOf(it.durationMillis, media.durationSeconds * 1_000),
+                    )
+                } else {
+                    it.copy(phase = PttPlaybackPhase.Failed, error = "语音文件路径不可用")
+                }
+            }
+            return
+        }
+
+        installListener(media.messageId, path)
+        val current = _states.value[media.messageId]
+        if (current?.phase != PttPlaybackPhase.Playing) {
+            publish(media.messageId) {
+                it.copy(
+                    phase = PttPlaybackPhase.Preparing,
+                    error = null,
+                    durationMillis = maxOf(it.durationMillis, media.durationSeconds * 1_000),
+                )
+            }
+        }
+        runCatching {
+            OfficialPttPlayerBridge.toggle(media.messageId, path, current?.positionMillis ?: 0)
+        }.onFailure {
+            Log.w(TAG, "ptt: toggle failed msg=${media.messageId}", it)
+            publish(media.messageId) {
+                it.copy(phase = PttPlaybackPhase.Failed, error = "无法播放此语音")
+            }
+        }
+    }
+
+    fun stopAndRelease() {
+        runCatching { OfficialPttPlayerBridge.stop() }
+            .onFailure { Log.w(TAG, "ptt: stop failed", it) }
+        ownedMessageIds.forEach(OfficialPttPlayerBridge::unregister)
+        ownedMessageIds.clear()
+        listeners.clear()
+        _states.value = emptyMap()
+    }
+
+    private fun installListener(messageId: Long, path: String) {
+        val listener = listeners.getOrPut(messageId) { createListener(messageId) }
+        OfficialPttPlayerBridge.register(messageId, path, listener)
+        ownedMessageIds.add(messageId)
+    }
+
+    private fun createListener(expectedMessageId: Long) = object : OfficialPttPlayerListenerBridge() {
+        override fun onStart(msgId: Long, path: String) {
+            if (msgId != expectedMessageId) return
+            publish(msgId) { it.copy(phase = PttPlaybackPhase.Playing, error = null) }
+        }
+
+        override fun onComplete(msgId: Long, speed: Float) {
+            if (msgId != expectedMessageId) return
+            publish(msgId) {
+                it.copy(phase = PttPlaybackPhase.Idle, positionMillis = 0, error = null)
+            }
+        }
+
+        override fun onProgressChanged(
+            msgId: Long,
+            path: String,
+            currentPosition: Int,
+            duration: Int,
+        ) {
+            if (msgId != expectedMessageId) return
+            publish(msgId) {
+                it.copy(
+                    phase = PttPlaybackPhase.Playing,
+                    positionMillis = currentPosition.coerceAtLeast(0),
+                    durationMillis = duration.coerceAtLeast(it.durationMillis),
+                    error = null,
+                )
+            }
+        }
+
+        override fun onPause(msgId: Long, path: String, currentPosition: Int) {
+            if (msgId != expectedMessageId) return
+            publish(msgId) {
+                it.copy(
+                    phase = PttPlaybackPhase.Paused,
+                    positionMillis = currentPosition.coerceAtLeast(0),
+                )
+            }
+        }
+
+        override fun onStop(msgId: Long, path: String) {
+            if (msgId != expectedMessageId) return
+            publish(msgId) { it.copy(phase = PttPlaybackPhase.Idle, error = null) }
+        }
+    }
+
+    private fun publish(
+        messageId: Long,
+        transform: (PttPlaybackState) -> PttPlaybackState,
+    ) {
+        synchronized(_states) {
+            val current = _states.value[messageId] ?: PttPlaybackState(messageId)
+            _states.value = _states.value + (messageId to transform(current))
+        }
+    }
+}

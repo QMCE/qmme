@@ -11,6 +11,7 @@ import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
 import com.tencent.qqnt.kernel.nativeinterface.MsgRecord
 import com.tencent.qqnt.kernel.nativeinterface.PicElement
+import com.tencent.qqnt.kernel.nativeinterface.PttElement
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import com.tencent.qqnt.kernel.nativeinterface.RichMediaFilePathInfo
 import com.tencent.qqnt.kernel.nativeinterface.TextElement
@@ -24,18 +25,30 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import rj.qmme.data.chat.ChatRepository
+import rj.qmme.data.chat.OfficialPttPlayer
+import rj.qmme.data.chat.PttMediaRef
+import rj.qmme.data.chat.PttPlaybackState
+import rj.qmme.data.chat.RichMediaRepository
 import rj.qmme.runtime.RuntimeCoordinator
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.max
+import kotlin.math.round
 
-/** Chat detail: history, live updates, text/image send, reply and forward. */
+/** Chat detail: history, live updates, text/image/voice send, reply, forward, multi-select. */
 class ChatDetailViewModel : ViewModel() {
     data class UiImage(
         val localPaths: List<String>,
         val remoteUrls: List<String>,
         val width: Int,
         val height: Int,
+    )
+
+    data class UiVoice(
+        val media: PttMediaRef,
+        val durationSeconds: Int,
     )
 
     data class ReplyPreview(
@@ -61,6 +74,7 @@ class ChatDetailViewModel : ViewModel() {
         val outgoing: Boolean,
         val text: String,
         val image: UiImage?,
+        val voice: UiVoice?,
         val reply: ReplyPreview?,
         val sendStatus: Int,
     )
@@ -124,6 +138,16 @@ class ChatDetailViewModel : ViewModel() {
 
     private val _pendingForwardIds = MutableStateFlow<List<Long>>(emptyList())
     val pendingForwardIds: StateFlow<List<Long>> = _pendingForwardIds.asStateFlow()
+
+    private val _multiSelectMode = MutableStateFlow(false)
+    val multiSelectMode: StateFlow<Boolean> = _multiSelectMode.asStateFlow()
+
+    private val _selectedMsgIds = MutableStateFlow<LinkedHashSet<Long>>(linkedSetOf())
+    val selectedMsgIds: StateFlow<LinkedHashSet<Long>> = _selectedMsgIds.asStateFlow()
+
+    val voicePlaybackStates: StateFlow<Map<Long, PttPlaybackState>> = OfficialPttPlayer.states
+
+    private val pttPlayedMessageIds = ConcurrentHashMap.newKeySet<Long>()
 
     private var openJob: Job? = null
     private var stateJob: Job? = null
@@ -359,13 +383,66 @@ class ChatDetailViewModel : ViewModel() {
         _pendingForwardIds.value = emptyList()
     }
 
+    fun enterMultiSelect(seedMsgId: Long) {
+        _multiSelectMode.value = true
+        _selectedMsgIds.value = linkedSetOf(seedMsgId)
+    }
+
+    fun exitMultiSelect() {
+        _multiSelectMode.value = false
+        _selectedMsgIds.value = linkedSetOf()
+    }
+
+    fun toggleSelection(msgId: Long) {
+        if (!_multiSelectMode.value || msgId <= 0L) return
+        val next = LinkedHashSet(_selectedMsgIds.value)
+        if (!next.add(msgId)) next.remove(msgId)
+        _selectedMsgIds.value = next
+        if (next.isEmpty()) exitMultiSelect()
+    }
+
+    fun prepareBatchForward(): Boolean {
+        val ids = _selectedMsgIds.value.filter { it > 0L }
+        if (ids.isEmpty()) {
+            _statusText.value = "请先选择消息"
+            return false
+        }
+        _pendingForwardIds.value = ids
+        return true
+    }
+
+    fun batchDeleteSelected(): Boolean {
+        val target = _target.value ?: return false
+        val ids = _selectedMsgIds.value.filter { it > 0L }
+        if (ids.isEmpty() || _messageActionInProgress.value) return false
+        _messageActionInProgress.value = true
+        _statusText.value = "正在删除 ${ids.size} 条消息…"
+        val started = repository.deleteMessages(target.toKernelContact(), ids) { code, errorMessage ->
+            if (!isCurrentTarget(target)) return@deleteMessages
+            _messageActionInProgress.value = false
+            if (code == 0) {
+                removeMessagesById(ids)
+                exitMultiSelect()
+                _statusText.value = ""
+            } else {
+                _statusText.value =
+                    errorMessage?.takeIf(String::isNotBlank)?.let { "删除失败：$it" } ?: "删除失败"
+            }
+        }
+        if (!started) {
+            _messageActionInProgress.value = false
+            _statusText.value = "消息服务不可用，删除失败"
+        }
+        return started
+    }
+
     fun forwardPendingTo(chatType: Int, peerUid: String): Boolean {
         val from = _target.value ?: return false
         val ids = _pendingForwardIds.value
         if (ids.isEmpty() || peerUid.isBlank()) return false
         if (_messageActionInProgress.value) return false
         _messageActionInProgress.value = true
-        _statusText.value = "正在转发…"
+        _statusText.value = if (ids.size == 1) "正在转发…" else "正在转发 ${ids.size} 条消息…"
         val to = Contact(chatType, peerUid, "")
         val started = repository.forwardMessages(
             ids,
@@ -375,8 +452,9 @@ class ChatDetailViewModel : ViewModel() {
             if (!isCurrentTarget(from)) return@forwardMessages
             _messageActionInProgress.value = false
             _pendingForwardIds.value = emptyList()
+            if (code == 0) exitMultiSelect()
             _statusText.value = if (code == 0) {
-                "已转发"
+                if (ids.size == 1) "已转发" else "已转发 ${ids.size} 条消息"
             } else {
                 errorMessage?.takeIf(String::isNotBlank)?.let { "转发失败：$it" } ?: "转发失败"
             }
@@ -386,6 +464,134 @@ class ChatDetailViewModel : ViewModel() {
             _statusText.value = "消息服务不可用，转发失败"
         }
         return started
+    }
+
+    fun sendVoice(recordedFile: File, durationMillis: Long, formatType: Int): Boolean {
+        val target = _target.value ?: return false
+        if (_sending.value || !repository.isConnected()) {
+            _statusText.value = "消息服务不可用，暂时无法发送语音"
+            return false
+        }
+        if (!recordedFile.isFile || recordedFile.length() <= 0L) {
+            _statusText.value = "录音文件无效"
+            return false
+        }
+        _sending.value = true
+        _statusText.value = "正在发送语音…"
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                val sourceMd5 = md5File(recordedFile)
+                val sendPath = repository.getMobileQQSendPath(
+                    RichMediaFilePathInfo(
+                        4,
+                        3,
+                        sourceMd5,
+                        recordedFile.name,
+                        1,
+                        0,
+                        null,
+                        "",
+                        true,
+                    ),
+                ).orEmpty()
+                val kernelFile = sendPath.takeIf(String::isNotBlank)?.let(::File)
+                val sendFile = if (kernelFile != null) {
+                    if (!kernelFile.isFile || kernelFile.length() <= 0L) {
+                        kernelFile.parentFile?.mkdirs()
+                        recordedFile.copyTo(kernelFile, overwrite = true)
+                    }
+                    kernelFile
+                } else {
+                    recordedFile
+                }
+                if (!sendFile.isFile || sendFile.length() <= 0L) {
+                    error("内核语音文件不可用")
+                }
+                val ptt = PttElement().apply {
+                    fileName = sendFile.name
+                    filePath = sendFile.absolutePath
+                    md5HexStr = md5File(sendFile)
+                    fileSize = sendFile.length()
+                    duration = max(1, round(durationMillis / 1000.0).toInt())
+                    this.formatType = formatType
+                    voiceType = 2
+                    voiceChangeType = 0
+                    canConvert2Text = false
+                    fileId = 0
+                    fileUuid = ""
+                    text = ""
+                    waveAmplitudes = arrayListOf()
+                }
+                MsgElement().apply {
+                    elementType = 4
+                    elementId = 0L
+                    pttElement = ptt
+                }
+            }
+            val element = result.getOrElse { error ->
+                Log.w(TAG, "prepare voice failed", error)
+                if (isCurrentTarget(target)) {
+                    _sending.value = false
+                    _statusText.value = error.message?.takeIf(String::isNotBlank)
+                        ?.let { "发送语音失败：$it" } ?: "发送语音失败"
+                }
+                return@launch
+            }
+            if (!isCurrentTarget(target)) return@launch
+            val started = repository.sendMessage(
+                target.toKernelContact(),
+                arrayListOf(element),
+            ) { code, errorMessage ->
+                if (!isCurrentTarget(target)) return@sendMessage
+                _sending.value = false
+                _statusText.value = if (code == 0) {
+                    ""
+                } else {
+                    errorMessage?.takeIf(String::isNotBlank)
+                        ?.let { "发送语音失败：$it" } ?: "发送语音失败"
+                }
+            }
+            if (!started) {
+                _sending.value = false
+                _statusText.value = "消息服务不可用，发送语音失败"
+            }
+        }
+        return true
+    }
+
+    fun toggleVoicePlayback(voice: UiVoice) {
+        val target = _target.value ?: return
+        val localPathAvailable = RichMediaRepository.resolvePttPath(voice.media).isNullOrBlank().not()
+        OfficialPttPlayer.toggle(voice.media) {
+            RichMediaRepository.requestPttAudio(
+                messageId = voice.media.messageId,
+                peerUid = target.peerUid,
+                chatType = target.chatType,
+                elementId = voice.media.elementId,
+            )
+        }
+        if (!localPathAvailable) return
+        if (voice.media.playState == 1 || !pttPlayedMessageIds.add(voice.media.messageId)) return
+        val previous = voice.media.playState
+        val requested = repository.markPttPlayed(
+            contact = target.toKernelContact(),
+            messageId = voice.media.messageId,
+            elementId = voice.media.elementId,
+        ) { errorCode, _ ->
+            if (errorCode != 0) {
+                voice.media.playState = previous
+                voice.media.pttElement?.playState = previous
+                pttPlayedMessageIds.remove(voice.media.messageId)
+            }
+        }
+        if (!requested) {
+            voice.media.playState = previous
+            voice.media.pttElement?.playState = previous
+            pttPlayedMessageIds.remove(voice.media.messageId)
+        } else {
+            voice.media.playState = 1
+            voice.media.pttElement?.playState = 1
+        }
     }
 
     fun searchLoaded(query: String): List<UiMessage> {
@@ -470,6 +676,7 @@ class ChatDetailViewModel : ViewModel() {
                 messageTable[message.stableId] = message.copy(
                     text = "你撤回了一条消息",
                     image = null,
+                    voice = null,
                     reply = null,
                     sendStatus = 2,
                 )
@@ -555,6 +762,8 @@ class ChatDetailViewModel : ViewModel() {
         _messageActionInProgress.value = false
         _pendingReply.value = null
         _pendingForwardIds.value = emptyList()
+        exitMultiSelect()
+        OfficialPttPlayer.stopAndRelease()
         if (clearTarget) {
             _target.value = null
             messageTable.clear()
@@ -664,10 +873,36 @@ class ChatDetailViewModel : ViewModel() {
                 summary = summary.replace('\n', ' ').take(80),
             )
         }
+        val voiceElement = elems.firstOrNull { it.pttElement != null }
+        val ptt = voiceElement?.pttElement
+        val voice = ptt?.let {
+            UiVoice(
+                media = PttMediaRef(
+                    messageId = msgId,
+                    elementId = voiceElement.elementId,
+                    filePath = it.filePath,
+                    md5Hex = it.md5HexStr,
+                    fileName = it.fileName,
+                    importRichMediaContext = null,
+                    fileUuid = it.fileUuid,
+                    durationSeconds = it.duration.coerceAtLeast(1),
+                    playState = it.playState,
+                    pttElement = it,
+                    msgElement = voiceElement,
+                ),
+                durationSeconds = it.duration.coerceAtLeast(1),
+            )
+        }
         val body = elems.asSequence()
-            .filter { it.replyElement == null }
+            .filter { it.replyElement == null && it.pttElement == null }
             .joinToString(separator = "") { it.displayText() }
-            .ifBlank { if (reply != null) "" else "[暂不支持的消息]" }
+            .ifBlank {
+                when {
+                    voice != null -> "[语音] ${voice.durationSeconds}\""
+                    reply != null -> ""
+                    else -> "[暂不支持的消息]"
+                }
+            }
         return UiMessage(
             stableId = stable,
             messageId = msgId,
@@ -685,6 +920,7 @@ class ChatDetailViewModel : ViewModel() {
             senderUin = senderUin,
             text = body,
             image = elems.firstNotNullOfOrNull { it.picElement }?.toUiImage(),
+            voice = voice,
             reply = reply,
             sendStatus = sendStatus,
         )

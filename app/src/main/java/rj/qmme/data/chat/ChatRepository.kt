@@ -323,6 +323,25 @@ class ChatRepository {
             .getOrDefault(false)
     }
 
+    fun markPttPlayed(
+        contact: Contact,
+        messageId: Long,
+        elementId: Long,
+        callback: (errorCode: Int, errorMessage: String?) -> Unit = { _, _ -> },
+    ): Boolean {
+        if (messageId <= 0L || elementId <= 0L) return false
+        val service = KernelBridge.getKernelMsgService() ?: return false
+        return runCatching {
+            // Watch ABI: setPttPlayedState(msgId, contact, elementId, callback)
+            service.setPttPlayedState(messageId, contact, elementId) { code, message ->
+                callback(code, message)
+            }
+            true
+        }.onFailure {
+            Log.w(TAG, "mark ptt played failed msg=$messageId element=$elementId", it)
+        }.getOrDefault(false)
+    }
+
     fun stopListening() {
         val id = listenerId
         val service = listenerService

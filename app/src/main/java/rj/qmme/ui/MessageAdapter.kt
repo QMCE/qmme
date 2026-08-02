@@ -1,5 +1,6 @@
 package rj.qmme.ui
 
+import android.content.res.ColorStateList
 import android.text.TextUtils
 import android.text.format.DateFormat
 import android.view.Gravity
@@ -12,6 +13,7 @@ import androidx.core.widget.TextViewCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.button.MaterialButton as MaterialButtonView
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.imageview.ShapeableImageView
@@ -23,6 +25,7 @@ import com.highcapable.hikage.core.base.Hikagable
 import com.highcapable.hikage.core.layout.LayoutParams
 import com.highcapable.hikage.widget.android.widget.FrameLayout
 import com.highcapable.hikage.widget.android.widget.LinearLayout
+import com.highcapable.hikage.widget.com.google.android.material.button.MaterialButton
 import com.highcapable.hikage.widget.com.google.android.material.card.MaterialCardView
 import com.highcapable.hikage.widget.com.google.android.material.imageview.ShapeableImageView
 import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView
@@ -36,7 +39,17 @@ class MessageAdapter(
     private val isGroup: Boolean = false,
     private val onImageClick: (ChatDetailViewModel.UiImage, View?) -> Unit = { _, _ -> },
     private val onMessageLongClick: (ChatDetailViewModel.UiMessage) -> Unit = {},
+    private val onVoiceClick: (ChatDetailViewModel.UiVoice) -> Unit = {},
+    private val onMessageClick: (ChatDetailViewModel.UiMessage) -> Unit = {},
+    private var selectionMode: Boolean = false,
+    private var selectedIds: Set<Long> = emptySet(),
 ) : ListAdapter<ChatDetailViewModel.UiMessage, MessageAdapter.Holder>(DIFF) {
+    fun updateSelection(selectionMode: Boolean, selectedIds: Set<Long>) {
+        this.selectionMode = selectionMode
+        this.selectedIds = selectedIds
+        if (itemCount > 0) notifyItemRangeChanged(0, itemCount)
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         lateinit var rowContainer: LinearLayout
         lateinit var avatar: ShapeableImageView
@@ -44,7 +57,9 @@ class MessageAdapter(
         lateinit var nickname: MaterialTextView
         lateinit var time: MaterialTextView
         lateinit var card: MaterialCardView
+        lateinit var selectionIndicator: ShapeableImageView
         lateinit var replyPreview: MaterialTextView
+        lateinit var voiceButton: MaterialButtonView
         lateinit var image: ShapeableImageView
         lateinit var body: MaterialTextView
         val maxBubbleWidth = (parent.resources.displayMetrics.widthPixels * 0.72f).toInt()
@@ -56,6 +71,17 @@ class MessageAdapter(
                     setPadding(dp(parent, 16), dp(parent, 1), dp(parent, 16), dp(parent, 1))
                 },
             ) {
+                selectionIndicator = ShapeableImageView(
+                    lparams = LayoutParams(width = dp(parent, 24), height = dp(parent, 24)) {
+                        gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                    },
+                    init = {
+                        setImageResource(R.drawable.ic_check)
+                        scaleType = ImageView.ScaleType.CENTER_INSIDE
+                        visibility = View.GONE
+                        contentDescription = "已选中"
+                    },
+                )
                 rowContainer = LinearLayout(
                     lparams = LayoutParams(
                         width = ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -176,6 +202,21 @@ class MessageAdapter(
                                         visibility = View.GONE
                                     },
                                 )
+                                voiceButton = MaterialButton(
+                                    lparams = LayoutParams(
+                                        width = ViewGroup.LayoutParams.WRAP_CONTENT,
+                                        height = ViewGroup.LayoutParams.WRAP_CONTENT,
+                                    ) {
+                                        bottomMargin = dp(parent, 4)
+                                    },
+                                    init = {
+                                        isAllCaps = false
+                                        visibility = View.GONE
+                                        contentDescription = "语音消息"
+                                        icon = parent.context.getDrawableCompat(R.drawable.ic_mic)
+                                        iconGravity = com.google.android.material.button.MaterialButton.ICON_GRAVITY_TEXT_START
+                                    },
+                                )
                                 image = ShapeableImageView(
                                     lparams = LayoutParams(
                                         width = imageWidth,
@@ -211,17 +252,21 @@ class MessageAdapter(
         return Holder(
             hikage.root,
             rowContainer,
+            selectionIndicator,
             avatar,
             metaRow,
             nickname,
             time,
             card,
             replyPreview,
+            voiceButton,
             image,
             body,
             isGroup,
             onImageClick,
             onMessageLongClick,
+            onVoiceClick,
+            onMessageClick,
         )
     }
 
@@ -231,7 +276,7 @@ class MessageAdapter(
         val next = if (position < itemCount - 1) getItem(position + 1) else null
         val firstOfGroup = previous == null || !sameRun(previous, message)
         val lastOfGroup = next == null || !sameRun(message, next)
-        holder.bind(message, firstOfGroup, lastOfGroup)
+        holder.bind(message, firstOfGroup, lastOfGroup, selectionMode, selectedIds)
     }
 
     private fun sameRun(
@@ -273,22 +318,28 @@ class MessageAdapter(
     class Holder(
         itemView: View,
         private val rowContainer: LinearLayout,
+        private val selectionIndicator: ShapeableImageView,
         private val avatar: ShapeableImageView,
         private val metaRow: LinearLayout,
         private val nickname: MaterialTextView,
         private val time: MaterialTextView,
         private val card: MaterialCardView,
         private val replyPreview: MaterialTextView,
+        private val voiceButton: MaterialButtonView,
         private val image: ShapeableImageView,
         private val body: MaterialTextView,
         private val isGroup: Boolean,
         private val onImageClick: (ChatDetailViewModel.UiImage, View?) -> Unit,
         private val onMessageLongClick: (ChatDetailViewModel.UiMessage) -> Unit,
+        private val onVoiceClick: (ChatDetailViewModel.UiVoice) -> Unit,
+        private val onMessageClick: (ChatDetailViewModel.UiMessage) -> Unit,
     ) : RecyclerView.ViewHolder(itemView) {
         fun bind(
             message: ChatDetailViewModel.UiMessage,
             firstOfGroup: Boolean,
             lastOfGroup: Boolean,
+            selectionMode: Boolean,
+            selectedIds: Set<Long>,
         ) {
             val context = itemView.context
             val outgoing = message.outgoing
@@ -394,6 +445,50 @@ class MessageAdapter(
             )
             body.textColor = onContainer
 
+            val selected = selectionMode && message.messageId in selectedIds
+            if (selectionMode) {
+                selectionIndicator.visibility = View.VISIBLE
+                val indicatorGravity = if (outgoing) {
+                    Gravity.CENTER_VERTICAL or Gravity.END
+                } else {
+                    Gravity.CENTER_VERTICAL or Gravity.START
+                }
+                (selectionIndicator.layoutParams as FrameLayout.LayoutParams).apply {
+                    gravity = indicatorGravity
+                }.also(selectionIndicator::setLayoutParams)
+                selectionIndicator.imageTintList = ColorStateList.valueOf(
+                    MaterialColors.getColor(
+                        selectionIndicator,
+                        if (selected) {
+                            androidx.appcompat.R.attr.colorPrimary
+                        } else {
+                            com.google.android.material.R.attr.colorOnSurfaceVariant
+                        },
+                    ),
+                )
+                selectionIndicator.alpha = if (selected) 1f else 0.4f
+                card.alpha = if (selected) 1f else 0.72f
+                card.setCardBackgroundColor(
+                    MaterialColors.getColor(
+                        card,
+                        if (selected) {
+                            if (outgoing) {
+                                com.google.android.material.R.attr.colorPrimaryContainer
+                            } else {
+                                com.google.android.material.R.attr.colorSecondaryContainer
+                            }
+                        } else if (outgoing) {
+                            com.google.android.material.R.attr.colorPrimaryContainer
+                        } else {
+                            com.google.android.material.R.attr.colorSurfaceContainerHigh
+                        },
+                    ),
+                )
+            } else {
+                selectionIndicator.visibility = View.GONE
+                card.alpha = 1f
+            }
+
             val reply = message.reply
             if (reply == null) {
                 replyPreview.visibility = View.GONE
@@ -436,17 +531,46 @@ class MessageAdapter(
                     .build()
                 image.setOnClickListener { onImageClick(picture, image) }
             }
+
+            val voice = message.voice
+            if (voice == null) {
+                voiceButton.visibility = View.GONE
+                voiceButton.setOnClickListener(null)
+            } else {
+                voiceButton.visibility = View.VISIBLE
+                voiceButton.text = "语音 ${voice.durationSeconds}s"
+                voiceButton.setTextColor(onContainer)
+                voiceButton.iconTint = ColorStateList.valueOf(onContainer)
+                voiceButton.setOnClickListener {
+                    if (selectionMode) {
+                        onMessageClick(message)
+                    } else {
+                        onVoiceClick(voice)
+                    }
+                }
+            }
+
             body.text = message.text
             body.visibility = when {
                 message.text.isBlank() -> View.GONE
                 picture != null && message.text == "[图片]" -> View.GONE
+                voice != null && message.text.startsWith("[语音]") -> View.GONE
                 else -> View.VISIBLE
             }
             card.contentDescription = buildString {
                 append(if (outgoing) "我" else message.senderName.ifBlank { "对方" })
                 append("：")
                 if (reply != null) append("回复 ${reply.senderName} ")
-                append(message.text.ifBlank { if (picture != null) "[图片]" else "" })
+                when {
+                    voice != null -> append("语音 ${voice.durationSeconds} 秒")
+                    message.text.isNotBlank() -> append(message.text)
+                    picture != null -> append("[图片]")
+                }
+            }
+            if (selectionMode) {
+                card.setOnClickListener { onMessageClick(message) }
+            } else {
+                card.setOnClickListener(null)
             }
             card.setOnLongClickListener {
                 onMessageLongClick(message)
@@ -490,6 +614,8 @@ class MessageAdapter(
             AvatarLoader.unbind(image)
             AvatarLoader.unbind(avatar)
             image.setOnClickListener(null)
+            voiceButton.setOnClickListener(null)
+            card.setOnClickListener(null)
         }
 
         private fun alignChild(view: View, edge: Int) {
