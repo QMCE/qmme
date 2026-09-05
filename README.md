@@ -50,7 +50,9 @@ adb shell am start -n rj.qmme/.ui.MainActivity
 - **消息操作**：长按菜单支持回复、转发、多选、复制、撤回、删除、重发（危险操作二次确认）。
 - **语音**：系统录音栈发送 / 官方播放器收听。
 - **会话能力**：会话设置（置顶 / 免打扰）、群管理 Activity（全员禁言 / 公告 / 踢人）、群成员列表、本地消息搜索、输入草稿。
-- **设置**：交互开关、退出确认、清除草稿、关于页。
+- **设置**：交互开关、退出确认、清除草稿、AI 服务端点配置、关于页。
+- **通知**：消息通知与联系人/群系统通知（好友申请、群管理通知），通知中心页可处理申请；前台会话自动抑制当前聊天通知；通知点击直达对应会话。
+- **AI 摘要**：聊天工具栏一键总结最近消息，OpenAI 兼容流式输出；端点（URL / Key / 模型）在设置页本机配置，不内置任何密钥。
 - **其它**：表情资源桥接、APNG/Lottie 富图 native 初始化、崩溃捕获页、登录后进程重启以获得干净的内核初始化。
 
 尚未完成：群聊 chatType/peerUid 映射的真机验证、QQ 空间、音视频通话，以及富媒体收发的服务端联调。
@@ -99,9 +101,11 @@ kernel/    KernelBridge + ProjectKernelBootstrap/Dependencies/DeviceInfo
              桥接 MSF 推送与前台状态
 
 data/      ChatRepository（IKernelMsgService/kernelpublic.Contact 适配层）、
-           LoginPrefs、OnlineStatus、MediaStoreSaver、EmotionAssetBridge
+           LoginPrefs、OnlineStatus、MediaStoreSaver、EmotionAssetBridge、
+           notify/（联系人/群系统通知仓库）、AiSettings、ai/（SSE 摘要客户端）
 
-viewmodel/ AuthViewModel · ChatListViewModel · ChatDetailViewModel · ContactsViewModel
+viewmodel/ AuthViewModel · ChatListViewModel · ChatDetailViewModel · ContactsViewModel ·
+           NotificationCenterViewModel
 
 ui/        MainActivity + ViewNavigator（基于 View 的导航栈，每页独立 LifecycleOwner）
            各 *Hikagable 页面（Login/Main/ChatDetail/ImagePreview/Crash）与 Adapter
@@ -191,4 +195,5 @@ export ANDROID_SDK_ROOT=$ANDROID_HOME
 ## 已知限制
 
 - 仅打包 `armeabi-v7a`，需在支持该 ABI 的设备 / 模拟器上运行。
-- 富媒体（图片以外）、语音、回复、撤回时限、转发、多选等尚未完成。
+- AI 摘要依赖用户自备的 OpenAI 兼容端点，未配置时该功能不可用。
+- 群聊 chatType/peerUid 映射的真机验证、QQ 空间、音视频通话、富媒体收发的服务端联调仍在进行中。

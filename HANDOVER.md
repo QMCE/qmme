@@ -34,6 +34,39 @@
 已知观察项：jar 引用 `com.bytedance.shadowhook` 但 qmme 走自研 BoostMultiDex stub，
 预计不触发；APK 体积 +9 MB 左右。
 
+## 0.1 2026-09-05 QMCE→QMME 功能迁移（同分支）
+
+计划见 `/workspace/QMME-FEATURE-MIGRATION-PLAN.md`。数据/服务层从 QMCE 直接迁移
+（sed 改包名 `rj.qmce.lite` → `rj.qmme`），UI 层全部用 Hikage + M3 重写，
+手表专属（QmceWearSurfaces 等）剔除。均已过 `:app:compileDebugKotlin`。
+
+**第一批 通知体系**（4ac89aa / 0ad6afe）：
+
+- `kernel/SdkCompat.kt` 补 6 个内核方法桥（buddy 监听 v/c、通知 l/清、recent g/x）。
+- `data/notify/`：ContactNotifyRepository(IKernelBuddyListener)、GroupNotifyRepository
+  (IKernelGroupListener)、SharedNotifyRepositories 单例；`notify/` 九件
+  （Channels/ForegroundSession/MessageNotifier/ContactSystemNotifier/DeepLinks/…）。
+- `NotificationCenterViewModel` + `NotificationCenterHikagable`：好友申请 + 群系统通知，
+  拒绝/同意操作；MainHikagable "我的"页入口；`MainActivity` 登录后 start /
+  登出 stop 通知服务，通知点击 deep link 进对应聊天。
+- `viewmodel/AuthViewModel`：makeObserver 全重写为 override `onReceive(type,isSuccess,data)`
+  手动解 Bundle —— **qq-sdk.jar 的 Kotlin metadata 对 QrWtLoginExtObserver 混淆名
+  a/b/c/d 映射错误，按 metadata override 永远不会被回调**（QMCE 已踩坑，此处沿用）。
+
+**第二批 聊天 AI 摘要**（ae34273）：
+
+- `data/AiSettings.kt`：本机 prefs 保存 baseUrl/apiKey/model；`resolve()` 缺一返 null；
+  URL 归一化补 `/chat/completions`。QMME 不内置 key。
+- `data/ai/MessageSummaryClient.kt`：OpenAI 兼容 SSE 流式（HttpURLConnection +
+  `data:` 行 + `[DONE]`），Request 可取消（disconnect + interrupt）。
+- `ChatDetailViewModel`：MessageSummaryState（Idle/Loading/Success/Error）状态机，
+  AtomicInteger generation 防旧流写入；取已加载消息最后 120 条做 transcript。
+- `ChatDetailHikagable` 工具栏加"AI 摘要"入口（多选模式同步隐藏）→
+  `ChatSummaryHikagable`（流式渲染、可重试、dispose 取消）；closeChat 也 dismiss。
+- `SettingsHikagable`：AI 服务设置对话框；未配置时摘要页报"尚未配置 AI 端点"。
+
+**暂缓**：Agent（内核信使，依赖面大）、OTA/更新（QMME 走手动分发），理由见计划文档。
+
 ## 1. 工作区
 
 | 路径 | 作用 |
