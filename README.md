@@ -76,7 +76,7 @@ adb shell am start -n rj.qmme/.ui.MainActivity
 | 构建  | Android Gradle Plugin 9.3.0，Gradle 9.5.0                                          |
 | UI  | Hikage 1.1.1（原生 View + Kotlin DSL）、BetterAndroid、Material Components、RecyclerView |
 | 架构  | MVVM（AndroidX ViewModel + Lifecycle）、Kotlin Coroutines / StateFlow                |
-| 底层  | com.tencent.qqlite 9.0.7（MSF + NT Kernel，`appId=537282233`）、MMKV/QMMKV            |
+| 底层  | `qq-sdk.jar`（手表 QQ 9.0.7.2563 完整提取，MSF + NT Kernel，`appId=537282233`）、MMKV/QMMKV    |
 | ABI | 仅 `armeabi-v7a`；`minSdk 23`，`targetSdk / compileSdk 37`                           |
 
 ---
@@ -107,10 +107,26 @@ ui/        MainActivity + ViewNavigator（基于 View 的导航栈，每页独�
            各 *Hikagable 页面（Login/Main/ChatDetail/ImagePreview/Crash）与 Adapter
 
 fix/       兼容垫片：LegacyKiller（包名映射 PM 代理）、
-           PackageSignatureProvider/PkgSignFix/SignatureProbe（IPC 签名伪装）等
+           PackageSignatureProvider/PkgSignFix/SignatureProbe（IPC 签名伪装）、
+           KtFix（Kotlin stdlib 桥，jar 内 1148 处调用）/ ResCompat（官方字符串资源兜底）/
+           PendingIntentCompat（S+ 补 FLAG_IMMUTABLE）等
 ```
 
 **运行时生命周期**：`COLD → ATTACHING → APPLICATION_READY → RUNTIME_CREATED → ACCOUNT_BOUND → KERNEL_STARTING → ONLINE`，由 `RuntimeCoordinator` 统一记录与保护。
+
+### 关于运行时 jar
+
+`app/libs/qq-sdk.jar` 是手表 QQ 9.0.7.2563 的完整提取（34543 个类，对照 QMCE 一致），
+在此基础上做了两步离线处理（工具链见 `work/`，一次性产物，不进构建流程）：
+
+1. **包名重定向**：ASM 把 jar 内 4 个宿主类引用整体改写到 `rj.qmme.*`
+   （`Flag`、`fix/KtFix`、`fix/PendingIntentCompat`、`fix/ResCompat`），全量校验 0 残留。
+2. **签名 patch 重打**：`oicq/wlogin_sdk/tools/util`（`get_apk_id` / `get_apk_v` /
+   `getPkgSigFromApkName`）与 `com/tencent/mobileqq/msf/core/auth/c`（两个 `a(PackageManager,...)`）
+   共 5 个方法体重定向到 `rj.qmme.fix.PkgSignFix`。
+
+jar 调用的全部 153 条 `KtFix` 方法签名固化在 `work/ktfix-contract.txt`，
+`fix/KtFix.kt` 覆盖并逐条核对（差集必须为 0）。
 
 ---
 

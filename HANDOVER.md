@@ -4,6 +4,36 @@
 > 并在 `~/qmme/ntpro` 用 Kotlin/Android 重实现。原则：**只落已经由静态证据
 > 证明的结论，不臆造参数/语义**。
 
+## 0. 2026-09-05 运行时 jar 迁移（feat/migrate-qq-sdk）
+
+运行时从裁剪版 `qq-core-watch-runtime.jar`（25 856 类）切换为 QMCE 同源的完整版
+`qq-sdk.jar`（34 543 类，手表 QQ 9.0.7.2563，多出 qqlive/thumbplayer/richframework
+等富媒体链路）。对 jar 做了两步 ASM 离线处理：
+
+1. **包名重定向**（4 条精确映射，34 543/34 543 全量通过，0 残留）：
+   `rj/qmce/lite/Flag` → `rj/qmme/Flag`；`rj/qmce/lite/fix/{KtFix,PendingIntentCompat,ResCompat}` → `rj/qmme/fix/*`。
+2. **签名 patch 重打**（qmme 特有，qmce jar 没有）：5 个方法体重定向到
+   `rj.qmme.fix.PkgSignFix` —— `oicq/wlogin_sdk/tools/util.{get_apk_id,get_apk_v,getPkgSigFromApkName}`、
+   `com/tencent/mobileqq/msf/core/auth/c.a(PackageManager,int)` 与 `c.a(PackageManager,String[])`。
+
+配套源码改动：
+
+- `fix/KtFix.kt`：以 qmce 版为基准重写，并按 `work/ktfix-contract.txt`（153 条 jar
+  调用签名，ScanHostCalls 扫描产出）补齐 47 个缺失桥接（`map`/`filter`/`zip`/`asSequence`/
+  `averageOfInt` 等）；修正 `throwIndexOverflow` 为 void 返回（kotlinc 2.4 把 `Nothing`
+  编译成 `Void`，与 jar 的 `()V` 调用不匹配）。**契约差集 = 0**（kotlinc 2.4.0 编译 +
+  ContractCheck 核对）。
+- 新增 `fix/ResCompat.kt`（官方 9.0.7 字符串表兜底，勿手改）与 `fix/PendingIntentCompat.kt`
+  （S+ 强制 FLAG_IMMUTABLE，targetSdk 37 必需）。
+- `Flag.kt` 首次真正生效：新 jar 的 `QLog.addLogItem` 读取 `DISABLE_QLOG_LOCAL_WRITE`。
+- 构建：依赖切到 `qq-sdk.jar`；新增 `app/multidex-proguard.pro`（对照 qmce 改包名）；
+  `keepRules/rules.keep` 补 `rj.qmme.Flag` / `rj.qmme.fix.**`；version 0.5.0(8)。
+
+**回归验证清单（真机）**：登录（重点 WtLogin 签名链）→ 会话/收发消息 → 图片 → 群管理 →
+设置页；`logcat` 过滤 `NoSuchMethod|NoClassDefFoundError|KtFix|PkgSignFix` 应无输出。
+已知观察项：jar 引用 `com.bytedance.shadowhook` 但 qmme 走自研 BoostMultiDex stub，
+预计不触发；APK 体积 +9 MB 左右。
+
 ## 1. 工作区
 
 | 路径 | 作用 |
