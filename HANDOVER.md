@@ -56,16 +56,80 @@
 **第二批 聊天 AI 摘要**（ae34273）：
 
 - `data/AiSettings.kt`：本机 prefs 保存 baseUrl/apiKey/model；`resolve()` 缺一返 null；
-  URL 归一化补 `/chat/completions`。QMME 不内置 key。
+  URL 归一化补 `/chat/completions`。
 - `data/ai/MessageSummaryClient.kt`：OpenAI 兼容 SSE 流式（HttpURLConnection +
   `data:` 行 + `[DONE]`），Request 可取消（disconnect + interrupt）。
 - `ChatDetailViewModel`：MessageSummaryState（Idle/Loading/Success/Error）状态机，
   AtomicInteger generation 防旧流写入；取已加载消息最后 120 条做 transcript。
 - `ChatDetailHikagable` 工具栏加"AI 摘要"入口（多选模式同步隐藏）→
   `ChatSummaryHikagable`（流式渲染、可重试、dispose 取消）；closeChat 也 dismiss。
-- `SettingsHikagable`：AI 服务设置对话框；未配置时摘要页报"尚未配置 AI 端点"。
+- `SettingsHikagable`：AI 服务设置对话框。
 
-**暂缓**：Agent（内核信使，依赖面大）、OTA/更新（QMME 走手动分发），理由见计划文档。
+**第三批 AI 摘要端点内置**（f5b2c33）：
+
+- `AiSettings` 内置 opencode zen 免费端点：`https://opencode.ai/zen/v1/chat/completions`
+  + 模型 `big-pickle`（curl 实测匿名可用、cost=0）。三项全空 → 用内置端点；
+  部分填写 → 视为自定义不完整（设置页给出三态副标题）；齐全 → 自定义端点。
+- big-pickle 是混合推理模型，`reasoning_content` 恒为 null、思考混在 content，
+  网关对 `reasoning_effort/reasoning/thinking` 参数均不生效——"不思考"用
+  system prompt 约束（"直接输出总结正文，不要展示思考或推理过程"）。
+
+**第四批 AI Agent（Fluoxetine）**（d415934）：
+
+- `agent/` 11 文件 + `agent/kernel/` 4 文件，自 QMCE `rj.qmce.lite.agent.*` 迁移
+  （sed 改包名）：AgentEngine（多轮 tool-calling，MAX_TURNS=8、run-id 防串、
+  LLM_WAIT 200s）、LlmClient（SSE + `delta.tool_calls` 流式累积）、
+  ApprovalController（写操作审批，120s 超时 Deny）、AgentEventBus（Proxy 动态
+  代理注册 msg/buddy/group 内核监听）、AgentSession/AgentSessionStore/AgentTimer。
+- `AgentToolRegistrar` 注册 14 工具 + EventMonitor + Timer；**SendPacketTool 不迁**
+  （QMME 无 packet 数据层）。
+- 适配点：`markMessagesRead(contact)` 去 runtime 参；`connect(runtime)` 去
+  `bindRichMedia`；`QmceApplication.ensureRuntime()` → `QmmeApp.ensureRuntime()`；
+  QmceLog → android.util.Log。
+- UI：`AgentChatHikagable`（self/assistant/system 三态气泡 + 状态卡 + 审批卡 +
+  停止键）；`MainHikagable` "我的"页常驻入口（未开启时 toast 引导到设置）；
+  `SettingsHikagable` 加"AI 助手（Fluoxetine）"开关（`AppSettings.agent_enabled`，
+  默认关）；`MainActivity` 登录/登出接线 `AgentSubsystem.onLoggedIn/onLoggedOut`。
+- `kernel/SdkCompat` 补 `addMsgListener`/"o"、`removeMsgListener`/"d"、
+  `getRecentContactFromCache`/"D"（runCatching 包裹返 null）。
+
+**暂缓**：OTA/更新（QMME 走手动分发），理由见计划文档。
+
+## 0.2 2026-09-05 修复"打开就炸"（启动序列对齐 QMCE）
+
+现象：feat/migrate-qq-sdk 构建的 APK 装机（华为 Mate 70 Pro+）一点图标就闪退，
+CrashActivity 来不及显示。根因：**分支切到完整版 qq-sdk.jar 后，QmmeApp.onCreate
+里旧 jar 时代的手动启动补丁没有撤掉，与新 jar 的官方启动链重复执行**：
+
+1. `super.onCreate()`（WatchApplicationDelegate → MobileQQ 官方链）在新 jar 内部
+   已经运行 NtStartupDirector("application") / MiscInitTask / BeaconSDKInitTask；
+   QMCE 用同一个 jar 验证过**宿主不得再手动触发**。旧代码随后又手动跑了一遍
+   NtStartupDirector + QIMEI 任务图 + forceQimeiRegister，重复初始化破坏官方启动
+   状态，MobileQQ 会直接 `System.exit(-1)` 自杀——不走 UncaughtExceptionHandler，
+   CrashCatcher 拦不住，表现为纯闪退。
+2. QMME 缺 QMCE 的 `KernelBridge.ensureEarlyNativeBootstrap()`：内核
+   KernelSetterImpl.sInitialModule/sAppSetting 未 patch，native CheckConfig 读到
+   空版本/平台。
+
+修复（对齐 QMCE 已验证序列）：
+
+- `QmmeApp.onCreate`：删除 NtStartupDirector 手动调用、initializeOfficialQimeiStartup/
+  forceQimeiRegister/runOfficialStartupTask/officialBeaconInitialized 及
+  PoWHelper.ensureLoaded 调用；保留 `ensurePrivacyConsentForQimei`（幂等写
+  `privacypolicy_state=1`，官方任务图仍需要）；主进程新增
+  `runCatching { KernelBridge.ensureEarlyNativeBootstrap() }`（ensureRuntime 前）。
+  Beacon 兜底仍由 `OfficialReportBridge.initialize` 负责（QMCE 同款 fallback）。
+- `kernel/KernelBridge.kt`：从 QMCE 移植 `ensureEarlyNativeBootstrap` +
+  `injectInitialModule`（动态代理 patch WrapperEngineGlobalConfig：
+  appVersion=9.0.7.2563 / platformType=1 / appType=7 / osVersion / qua）+
+  `reinitWrapperEngineConfig`（KernelSetterImpl.Companion.c()）+
+  `injectSAppSetting`/`createPatchedAppSettingInjector`（IAppSettingInject 代理，
+  d/e→9.0.7.2563、h→2563、j→V 9.0.7.2563）。全 runCatching，失败只降级。
+- `QmmeApp.ensureRuntime()` 等其余启动代码未动（msf 进程的
+  initializeSecuritySigning 保留，全防御性）。
+
+回归观察项：`logcat` 过滤 `QMME-QIMEI|QMME|KernelBridge`，确认 NtStartupDirector
+不再被手动调用、`bind: patched WrapperEngineGlobalConfig` 出现一次。
 
 ## 1. 工作区
 
