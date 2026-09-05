@@ -1,12 +1,40 @@
-# Add project specific R8 rules here.
-# AGP will combine all keep rule files in src/main/keepRules to pass to R8
-#
-# For more details, see
-#   https://d.android.com/r/tools/r8/keep-rules
+# QMME keep 规则（qq-sdk.jar 迁移后必须保留的宿主类）
+# 来源对照 QMCE app-new/proguard-rules.pro，包名已改写为 rj.qmme。
+# 目前 release 未开混淆（enableCodeShrinks=false），本文件随 build.gradle.kts
+# 的 proguardFiles 挂载，将来开启 shrink 时自动生效。
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# ── Flag, called by QLog.addLogItem（ASM patch 读取 DISABLE_QLOG_LOCAL_WRITE）──
+-keep class rj.qmme.Flag { *; }
+
+# ── ASM patch 的调用目标（KtFix / ResCompat / PendingIntentCompat / PkgSignFix）──
+# jar 里有 1148+ 处 invokestatic 直接指向这些类，改名/删除即 NoSuchMethodError。
+-keep class rj.qmme.fix.** { *; }
+
+# ── 短名 SDK listener 桥（9.0.7 qq-sdk 内部回调）──
+-keepclassmembers class * implements com.tencent.watch.aio_impl.ui.cell.ptt.AIOPttAudioPlayerStateListener { *; }
+-keepclassmembers class * extends com.tencent.qqnt.watch.ptt.api.ITranslateTextService$AbsTranslateTextCallback { *; }
+
+# ── 内核反射 / MSF / QRoute 动态加载 ──
+-keep class com.tencent.** { *; }
+-keep class mqq.** { *; }
+-keep class oicq.** { *; }
+-keep class NS_** { *; }
+-dontwarn com.tencent.**
+-dontwarn mqq.**
+-dontwarn oicq.**
+
+# QQ PB Micro 通过 Class.getField() 按原名解析消息字段
+-keep class * extends com.tencent.mobileqq.pb.MessageMicro { *; }
+-keep class com.tencent.mobileqq.qfix.ApplicationDelegate { *; }
+-keep class * extends com.tencent.mobileqq.qfix.ApplicationDelegate { *; }
+-keep class com.tencent.qqnt.watch.app.WatchApplicationDelegate { *; }
+-keep class com.tencent.qqnt.watch.app.WatchApplicationDelegate$* { *; }
+
+# ── Kotlin / JNI / 通用 ──
+-keepattributes *Annotation*
+-keep class kotlin.Metadata { *; }
+-keepclassmembers class kotlin.Metadata { *; }
+-keep class kotlin.reflect.** { *; }
+-keepclasseswithmembernames class * { native <methods>; }
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
