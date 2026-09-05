@@ -55,7 +55,7 @@ class MessageSummaryClient {
             Endpoint(url = it.baseUrl, model = it.model, apiKey = it.apiKey)
         }
         if (endpoint == null) {
-            listener.onError("尚未配置 AI 端点，请在设置中填写", false)
+            listener.onError("自定义 AI 端点不完整，请在设置中补全或清空以使用内置端点", false)
             return request
         }
         val worker = Thread({ execute(request, messages, endpoint, listener) }, "QMME-AI-Summary")
@@ -180,7 +180,15 @@ class MessageSummaryClient {
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
-                    put("content", "你是一个准确、克制的 QQ 聊天记录总结助手。")
+                    // The builtin zen model (big-pickle) is a hybrid reasoner:
+                    // it has no separate reasoning phase to disable via API
+                    // fields, so "no thinking" is enforced via the prompt —
+                    // output the summary directly, no visible chain of thought.
+                    put(
+                        "content",
+                        "你是一个准确、克制的 QQ 聊天记录总结助手。" +
+                            "直接输出总结正文，不要展示思考或推理过程。",
+                    )
                 })
                 put(JSONObject().apply {
                     put("role", "user")

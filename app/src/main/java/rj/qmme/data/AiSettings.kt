@@ -6,16 +6,20 @@ import android.content.Context.MODE_PRIVATE
 /**
  * Phone-side AI endpoint configuration used by the message summarizer.
  *
- * QMME deliberately ships no built-in key: when nothing is configured the
- * summarizer surfaces a "not configured" error and the settings page offers
- * the input fields. Values are plain OpenAI-compatible chat/completions
- * parameters (base URL may be https://api.example.com or .../v1).
+ * Ships a built-in free endpoint (opencode zen, model `big-pickle`) that works
+ * anonymously, so the summarizer works out of the box. A fully entered custom
+ * endpoint overrides it; a partially filled custom config disables the
+ * fallback so the user notices their settings are incomplete.
  */
 object AiSettings {
     private const val PREFS_NAME = "qmme_ai_settings"
     private const val KEY_BASE_URL = "ai_base_url"
     private const val KEY_API_KEY = "ai_api_key"
     private const val KEY_MODEL = "ai_model"
+
+    // opencode zen free model: anonymous access, zero cost.
+    private const val BUILTIN_BASE_URL = "https://opencode.ai/zen/v1/chat/completions"
+    private const val BUILTIN_MODEL = "big-pickle"
 
     data class Endpoint(
         val baseUrl: String,
@@ -44,11 +48,22 @@ object AiSettings {
         prefs(context).edit().putString(KEY_MODEL, value.trim()).apply()
     }
 
-    /** Returns a normalized endpoint, or null when anything is missing. */
+    /** True when nothing has been configured and the built-in endpoint applies. */
+    fun isBuiltin(context: Context): Boolean =
+        baseUrl(context).isBlank() && apiKey(context).isBlank() && model(context).isBlank()
+
+    /**
+     * Returns a normalized endpoint: the built-in free one when nothing is
+     * configured, the custom one when all three fields are present, or null
+     * when a partial custom config would silently mix with the builtin.
+     */
     fun resolve(context: Context): Endpoint? {
         val url = baseUrl(context)
         val key = apiKey(context)
         val model = model(context)
+        if (url.isBlank() && key.isBlank() && model.isBlank()) {
+            return Endpoint(baseUrl = BUILTIN_BASE_URL, apiKey = "", model = BUILTIN_MODEL)
+        }
         if (url.isBlank() || key.isBlank() || model.isBlank()) return null
         return Endpoint(
             baseUrl = normalizeCompletionsUrl(url),

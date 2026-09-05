@@ -178,12 +178,11 @@ class SettingsHikagable(
             .show()
     }
 
-    private fun aiSubtitle(): String =
-        if (AiSettings.resolve(context) != null) {
-            "已配置：${AiSettings.model(context)}"
-        } else {
-            "未配置，填写 OpenAI 兼容接口后可用聊天 AI 摘要"
-        }
+    private fun aiSubtitle(): String = when {
+        AiSettings.isBuiltin(context) -> "内置免费端点 big-pickle，开箱即用；可自定义覆盖"
+        AiSettings.resolve(context) != null -> "已自定义：${AiSettings.model(context)}"
+        else -> "自定义端点不完整，补全三项或清空以回退内置"
+    }
 
     /** Plain Views on purpose: this dialog lives outside the Hikage tree. */
     private fun showAiEndpointDialog() {
