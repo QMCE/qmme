@@ -131,6 +131,37 @@ CrashActivity 来不及显示。根因：**分支切到完整版 qq-sdk.jar 后�
 回归观察项：`logcat` 过滤 `QMME-QIMEI|QMME|KernelBridge`，确认 NtStartupDirector
 不再被手动调用、`bind: patched WrapperEngineGlobalConfig` 出现一次。
 
+### §0.2.1 第二轮深挖（仍炸后，逐层对照 QMCE）
+
+第一轮修复后真机仍炸。以 "QMCE OK" 为锚点逐层 diff 宿主，找到三个更早的炸点
+（全部发生在 Application 阶段 / CrashCatcher 安装前后，先于第一轮的修复点）：
+
+1. **缺 `me.jessyan:autosize`（最致命）**：官方 `WatchApplicationDelegate`
+   （QmmeApp 的父类）字节码直接调用 `AutoSizeConfig`/`UnitsManager`。
+   QmmeApp 实例化即 NoClassDefFoundError → Application 创建失败 → 纯闪退。
+   QMCE 有 `jessyan-autosize:1.2.1` 依赖所以能跑。
+2. **assets 全缺**：QMME 自项目诞生就没有 assets/；旧裁剪版 jar 不需要，
+   完整版官方启动链需要 `qq.key`/`fekit.key`（安全签名）、`soconfig.cfg`/
+   `jni.ini`（native 配置）、`face_config.json`（表情）等。已从 QMCE 全量
+   拷贝 20 项（3.1MB，同源 9.0.7.2563，逐字节一致）。
+3. **签名伪装链是半成品**：QMME 的 `SigningInfoCompat` 在 signingInfo 为
+   null 时直接放弃，`PackageSignatureProvider.rewritePackageInfo` 不填空
+   signatures、不清 `FLAG_DEBUGGABLE`。已用 QMCE 版整体覆盖三个文件
+   （SigningInfoCompat 含反射重建 SigningInfo + 证书历史重写）。
+
+依赖对齐（app/build.gradle.kts，版本对照 QMCE）：`me.jessyan:autosize:1.2.1`、
+`okhttp 4.12.0`（MSF 网络层 119 类引用）、`commons-lang3:3.17.0`、
+`lifecycle-process:2.7.0`（ProcessLifecycleOwner 4 处引用）。
+**gson 不可外部引入**——`com/google/gson` 已内嵌在 qq-sdk.jar（228 处引用），
+外部再引会 Duplicate class。constraintlayout/room/navigation/viewpager2 同理
+不缺：引用计数虽大（356/112/291/96），但 QMCE 同样没依赖它们也能跑，
+证明官方启动链不触及（AIO UI/DB 后台类）。
+
+res 对齐：官方 Toast 布局组（layout/qq_toast_main_layout + drawable/
+qq_toast_background + values/qui_toast_colors）、drawable-nodpi/qqpro_ic_fg、
+raw 图标、values-notnight 颜色。Manifest 补声明 `QavManageService`
+（官方 QavSDK 对照声明）。
+
 ## 1. 工作区
 
 | 路径 | 作用 |
