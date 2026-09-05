@@ -361,6 +361,7 @@ class MainActivity : AppCompatActivity() {
                 null
             },
             onOpenSearch = { openChatSearch(viewModel) },
+            onOpenSummary = { openChatSummary(viewModel, target) },
             onOpenVoiceRecord = { requestVoiceRecord(viewModel) },
             onForwardMessage = { message ->
                 if (viewModel.prepareForward(message)) {
@@ -523,6 +524,26 @@ class MainActivity : AppCompatActivity() {
         navigator.push(entry)
     }
 
+    /**
+     * AI summary of the chat's loaded transcript. Reuses the chat's
+     * ChatDetailViewModel; dispose cancels the stream and resets its state.
+     */
+    private fun openChatSummary(viewModel: ChatDetailViewModel, target: ChatDetailViewModel.ChatTarget) {
+        val screen = ChatSummaryHikagable(
+            context = this,
+            chatTitle = target.title,
+            onBack = { navigator.pop() },
+        )
+        val hikage = screen.hikage.create(this, screenHost, false)
+        val entry = ViewNavigator.Entry(
+            route = ROUTE_CHAT_SUMMARY,
+            view = hikage.root,
+            disposeAction = screen::dispose,
+        )
+        navigator.push(entry)
+        screen.bind(entry.lifecycleOwner, viewModel)
+    }
+
     private fun openChatSearch(viewModel: ChatDetailViewModel) {
         val screen = ChatSearchHikagable(
             context = this,
@@ -624,6 +645,7 @@ class MainActivity : AppCompatActivity() {
         const val ROUTE_CHAT_SETTINGS = "chat_settings"
         const val ROUTE_GROUP_MEMBERS = "group_members"
         const val ROUTE_CHAT_SEARCH = "chat_search"
+        const val ROUTE_CHAT_SUMMARY = "chat_summary"
         const val ROUTE_NOTIFY_CENTER = "notification_center"
         const val ROUTE_CONTACT_PICKER = "contact_picker"
         const val ROUTE_VOICE = "voice"

@@ -70,6 +70,7 @@ class ChatDetailHikagable(
     private val onOpenSettings: () -> Unit,
     private val onOpenGroupManagement: (() -> Unit)?,
     private val onOpenSearch: () -> Unit,
+    private val onOpenSummary: () -> Unit,
     private val onOpenVoiceRecord: () -> Unit,
     private val onForwardMessage: (ChatDetailViewModel.UiMessage) -> Unit,
     private val onBatchForward: () -> Unit,
@@ -170,7 +171,11 @@ class ChatDetailHikagable(
                     setIcon(R.drawable.ic_search)
                     setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
                 }
-                menu.add(Menu.NONE, MENU_MORE, 1, "更多").apply {
+                menu.add(Menu.NONE, MENU_SUMMARY, 1, "AI 摘要").apply {
+                    setIcon(R.drawable.ic_info)
+                    setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
+                }
+                menu.add(Menu.NONE, MENU_MORE, 2, "更多").apply {
                     setIcon(R.drawable.ic_settings)
                     setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
                 }
@@ -178,6 +183,10 @@ class ChatDetailHikagable(
                     when (item.itemId) {
                         MENU_SEARCH -> {
                             onOpenSearch()
+                            true
+                        }
+                        MENU_SUMMARY -> {
+                            onOpenSummary()
                             true
                         }
                         MENU_MORE -> {
@@ -889,6 +898,7 @@ class ChatDetailHikagable(
         if (::toolbar.isInitialized) {
             toolbar.title = if (enabled) "多选" else target.title
             toolbar.menu.findItem(MENU_SEARCH)?.isVisible = !enabled
+            toolbar.menu.findItem(MENU_SUMMARY)?.isVisible = !enabled
             toolbar.menu.findItem(MENU_MORE)?.isVisible = !enabled
             if (enabled) {
                 toolbar.setNavigationOnClickListener { boundViewModel?.exitMultiSelect() }
@@ -1037,5 +1047,6 @@ class ChatDetailHikagable(
         const val SMOOTH_SCROLL_SPAN = 20
         const val MENU_SEARCH = 1001
         const val MENU_MORE = 1002
+        const val MENU_SUMMARY = 1003
     }
 }

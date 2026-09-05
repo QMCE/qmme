@@ -10,8 +10,12 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import com.google.android.material.textview.MaterialTextView
 import com.highcapable.betterandroid.ui.extension.component.base.getDrawableCompat
+import com.highcapable.betterandroid.ui.extension.view.textToString
+import com.highcapable.betterandroid.ui.extension.view.toast
 import com.highcapable.hikage.annotation.Hikagable
 import com.highcapable.hikage.core.Hikage
 import com.highcapable.hikage.core.base.Hikagable
@@ -21,6 +25,7 @@ import com.highcapable.hikage.widget.android.widget.LinearLayout
 import com.highcapable.hikage.widget.com.google.android.material.appbar.MaterialToolbar
 import com.highcapable.hikage.widget.com.google.android.material.textview.MaterialTextView
 import rj.qmme.R
+import rj.qmme.data.AiSettings
 import rj.qmme.ui.hikage.settingsGroup
 
 /** Phone settings hub with interaction, security, data, and about sections. */
@@ -100,6 +105,15 @@ class SettingsHikagable(
                                 switch.setOnCheckedChangeListener(confirmLogoutListener)
                             },
                         )
+                        buildSectionLabel("AI 摘要")
+                        settingsGroup {
+                            row(
+                                icon = context.getDrawableCompat(R.drawable.ic_info),
+                                title = "AI 服务设置",
+                                subtitle = aiSubtitle(),
+                                onClick = { showAiEndpointDialog() },
+                            )
+                        }
                         buildSectionLabel("数据")
                         settingsGroup {
                             row(
@@ -162,6 +176,57 @@ class SettingsHikagable(
             .setPositiveButton("清除") { _, _ -> onClearDrafts() }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    private fun aiSubtitle(): String =
+        if (AiSettings.resolve(context) != null) {
+            "已配置：${AiSettings.model(context)}"
+        } else {
+            "未配置，填写 OpenAI 兼容接口后可用聊天 AI 摘要"
+        }
+
+    /** Plain Views on purpose: this dialog lives outside the Hikage tree. */
+    private fun showAiEndpointDialog() {
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        val urlField = endpointField("接口地址", AiSettings.baseUrl(context), "https://api.example.com/v1")
+        val keyField = endpointField("API Key", AiSettings.apiKey(context), "sk-…")
+        val modelField = endpointField("模型名称", AiSettings.model(context), "deepseek-chat")
+        container.addView(urlField)
+        container.addView(keyField)
+        container.addView(modelField)
+        MaterialAlertDialogBuilder(context)
+            .setTitle("AI 服务设置")
+            .setMessage("填写 OpenAI 兼容的 chat/completions 接口，聊天页即可使用 AI 摘要。密钥只保存在本机。")
+            .setView(container)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("保存") { _, _ ->
+                AiSettings.setBaseUrl(context, urlField.editText?.textToString().orEmpty())
+                AiSettings.setApiKey(context, keyField.editText?.textToString().orEmpty())
+                AiSettings.setModel(context, modelField.editText?.textToString().orEmpty())
+                context.toast("AI 设置已保存")
+            }
+            .show()
+    }
+
+    private fun endpointField(label: String, initial: String, hint: String): TextInputLayout {
+        val layout = TextInputLayout(context).apply {
+            this.hint = label
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(12) }
+        }
+        layout.addView(
+            TextInputEditText(layout.context).apply {
+                setText(initial)
+                this.hint = hint
+                isSingleLine = true
+            },
+        )
+        return layout
     }
 
     @Hikagable
