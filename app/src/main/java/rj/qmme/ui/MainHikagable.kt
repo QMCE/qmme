@@ -84,6 +84,7 @@ class MainHikagable(
     private val onRequestLogout: () -> Unit,
     private val onRequestForceExit: () -> Unit,
     private val onOpenSettings: () -> Unit,
+    private val onOpenNotificationCenter: () -> Unit,
     private val onOpenChat: (com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo) -> Unit,
     private val onOpenContactProfile: (ContactsViewModel.UiBuddy) -> Unit,
 ) : HikageScreen {
@@ -642,6 +643,12 @@ class MainHikagable(
                     icon = context.getDrawableCompat(R.drawable.ic_account_circle),
                     title = "QQ 账号",
                     subtitle = account.uin.toString(),
+                )
+                row(
+                    icon = context.getDrawableCompat(R.drawable.ic_notifications),
+                    title = "新朋友与群通知",
+                    subtitle = "好友申请与群系统通知的同意/拒绝",
+                    onClick = onOpenNotificationCenter,
                 )
                 row(
                     icon = context.getDrawableCompat(R.drawable.ic_settings),

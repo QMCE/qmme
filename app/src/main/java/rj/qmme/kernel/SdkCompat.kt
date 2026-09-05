@@ -1,13 +1,83 @@
 package rj.qmme.kernel
 
+import com.tencent.qqnt.kernel.api.IBuddyService
 import com.tencent.qqnt.kernel.api.IGroupService
+import com.tencent.qqnt.kernel.api.IRecentContactService
+import com.tencent.qqnt.kernel.invorker.IExpandNotificationListener
+import com.tencent.qqnt.kernel.nativeinterface.IKernelBuddyListener
 import com.tencent.qqnt.kernel.nativeinterface.IKernelGroupListener
+import com.tencent.qqnt.kernel.nativeinterface.IKernelRecentContactListener
 
 /**
  * Prefers readable Kotlin method names on the single qq-sdk.jar; short JVM
  * names remain as a compatibility fallback.
  */
 object SdkCompat {
+
+    fun addBuddyListener(buddyService: IBuddyService, listener: IKernelBuddyListener?) {
+        invokeVoid(
+            buddyService,
+            IBuddyService::class.java,
+            listOf("addBuddyListener", "v"),
+            arrayOf(IKernelBuddyListener::class.java),
+            listener,
+        )
+    }
+
+    fun removeBuddyListener(buddyService: IBuddyService, listener: IKernelBuddyListener?) {
+        invokeVoid(
+            buddyService,
+            IBuddyService::class.java,
+            listOf("removeBuddyListener", "c"),
+            arrayOf(IKernelBuddyListener::class.java),
+            listener,
+        )
+    }
+
+    fun setExpandNotificationListener(
+        recentService: IRecentContactService,
+        listener: IExpandNotificationListener?,
+    ): Boolean = runCatching {
+        invokeVoid(
+            recentService,
+            IRecentContactService::class.java,
+            listOf("setExpandNotificationListener", "l"),
+            arrayOf(IExpandNotificationListener::class.java),
+            listener,
+        )
+        true
+    }.getOrDefault(false)
+
+    fun clearExpandNotificationListener(recentService: IRecentContactService): Boolean =
+        setExpandNotificationListener(recentService, null)
+
+    fun addKernelRecentContactListener(
+        recentService: IRecentContactService,
+        listener: IKernelRecentContactListener,
+    ): Boolean = runCatching {
+        invokeVoid(
+            recentService,
+            IRecentContactService::class.java,
+            listOf("addKernelRecentContactListener", "g"),
+            arrayOf(IKernelRecentContactListener::class.java),
+            listener,
+        )
+        true
+    }.getOrDefault(false)
+
+    fun removeKernelRecentContactListener(
+        recentService: IRecentContactService,
+        listener: IKernelRecentContactListener,
+    ): Boolean = runCatching {
+        invokeVoid(
+            recentService,
+            IRecentContactService::class.java,
+            listOf("removeKernelRecentContactListener", "x"),
+            arrayOf(IKernelRecentContactListener::class.java),
+            listener,
+        )
+        true
+    }.getOrDefault(false)
 
     fun addGroupListener(groupService: IGroupService, listener: IKernelGroupListener?) {
         invokeVoid(

@@ -208,6 +208,12 @@ object KernelBridge {
         "getKernelService",
     )
 
+    /** True once msg/recent/buddy services are all cached (QMCE parity). */
+    fun areCoreServicesReady(): Boolean =
+        cachedMsgService != null &&
+            cachedRecentService != null &&
+            cachedBuddyService != null
+
     fun getMsgService(): IMsgService? = cachedServiceFor(
         cachedMsgService,
         RuntimeCoordinator.currentRuntime(),
