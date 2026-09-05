@@ -11,12 +11,20 @@ object AppSettings {
     private const val KEY_NOTIFY_C2C = "notify_c2c"
     private const val KEY_NOTIFY_GROUP = "notify_group"
     private const val KEY_NOTIFY_CONTACT = "notify_contact"
+    private const val KEY_AGENT_ENABLED = "agent_enabled"
 
     fun enterToSend(context: Context): Boolean =
         prefs(context).getBoolean(KEY_ENTER_TO_SEND, false)
 
     fun setEnterToSend(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_ENTER_TO_SEND, enabled).apply()
+    }
+
+    fun agentEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AGENT_ENABLED, false)
+
+    fun setAgentEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AGENT_ENABLED, enabled).apply()
     }
 
     fun confirmLogout(context: Context): Boolean =

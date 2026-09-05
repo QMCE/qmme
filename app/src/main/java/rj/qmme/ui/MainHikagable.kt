@@ -62,6 +62,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import rj.qmme.QmmeApp
 import rj.qmme.R
+import rj.qmme.agent.AgentSession
 import rj.qmme.data.OnlineStatus
 import rj.qmme.kernel.KernelBridge
 import rj.qmme.runtime.RuntimeCoordinator
@@ -85,6 +86,7 @@ class MainHikagable(
     private val onRequestForceExit: () -> Unit,
     private val onOpenSettings: () -> Unit,
     private val onOpenNotificationCenter: () -> Unit,
+    private val onOpenAgentChat: () -> Unit,
     private val onOpenChat: (com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo) -> Unit,
     private val onOpenContactProfile: (ContactsViewModel.UiBuddy) -> Unit,
 ) : HikageScreen {
@@ -649,6 +651,12 @@ class MainHikagable(
                     title = "新朋友与群通知",
                     subtitle = "好友申请与群系统通知的同意/拒绝",
                     onClick = onOpenNotificationCenter,
+                )
+                row(
+                    icon = context.getDrawableCompat(R.drawable.ic_info),
+                    title = AgentSession.PEER_NAME,
+                    subtitle = "AI 助手：发消息、群管理、提醒等",
+                    onClick = onOpenAgentChat,
                 )
                 row(
                     icon = context.getDrawableCompat(R.drawable.ic_settings),

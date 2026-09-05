@@ -2,17 +2,54 @@ package rj.qmme.kernel
 
 import com.tencent.qqnt.kernel.api.IBuddyService
 import com.tencent.qqnt.kernel.api.IGroupService
+import com.tencent.qqnt.kernel.api.IMsgService
 import com.tencent.qqnt.kernel.api.IRecentContactService
 import com.tencent.qqnt.kernel.invorker.IExpandNotificationListener
 import com.tencent.qqnt.kernel.nativeinterface.IKernelBuddyListener
 import com.tencent.qqnt.kernel.nativeinterface.IKernelGroupListener
+import com.tencent.qqnt.kernel.nativeinterface.IKernelMsgListener
 import com.tencent.qqnt.kernel.nativeinterface.IKernelRecentContactListener
+import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 
 /**
  * Prefers readable Kotlin method names on the single qq-sdk.jar; short JVM
  * names remain as a compatibility fallback.
  */
 object SdkCompat {
+
+    fun addMsgListener(msgService: IMsgService, listener: IKernelMsgListener) {
+        invokeVoid(
+            msgService,
+            IMsgService::class.java,
+            listOf("addMsgListener", "o"),
+            arrayOf(IKernelMsgListener::class.java),
+            listener,
+        )
+    }
+
+    fun removeMsgListener(msgService: IMsgService, listener: IKernelMsgListener) {
+        invokeVoid(
+            msgService,
+            IMsgService::class.java,
+            listOf("removeMsgListener", "d"),
+            arrayOf(IKernelMsgListener::class.java),
+            listener,
+        )
+    }
+
+    /** Recent-contact cache read; returns null when the kernel call fails. */
+    fun getRecentContactFromCache(
+        recentService: IRecentContactService,
+        listType: Int,
+    ): List<RecentContactInfo>? = runCatching {
+        invokeReturning(
+            recentService,
+            IRecentContactService::class.java,
+            listOf("getRecentContactFromCache", "D"),
+            arrayOf(Int::class.javaPrimitiveType!!),
+            listType,
+        ) as? List<RecentContactInfo>
+    }.getOrNull()
 
     fun addBuddyListener(buddyService: IBuddyService, listener: IKernelBuddyListener?) {
         invokeVoid(

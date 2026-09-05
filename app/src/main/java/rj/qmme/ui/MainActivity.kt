@@ -20,6 +20,7 @@ import com.highcapable.betterandroid.ui.extension.view.toast
 import com.tencent.qphone.base.remote.SimpleAccount
 import mqq.app.Constants
 import rj.qmme.QmmeApp
+import rj.qmme.agent.AgentSubsystem
 import rj.qmme.data.AppSettings
 import rj.qmme.data.LoginPrefs
 import rj.qmme.data.chat.ChatSettingsRepository
@@ -182,6 +183,7 @@ class MainActivity : AppCompatActivity() {
 
                     LoginPrefs.clear(this@MainActivity)
                     stopNotificationServices()
+                    AgentSubsystem.onLoggedOut()
                     QmmeApp.acknowledgeOfficialLogout(reason)
                     Log.w("QMME", "ui: returned to login after official logout=$reason")
 
@@ -211,6 +213,7 @@ class MainActivity : AppCompatActivity() {
     private fun showLoggedIn(account: SimpleAccount) {
         isShowingLoggedInSurface = true
         startNotificationServices()
+        AgentSubsystem.onLoggedIn(this)
         val mainScreen = MainHikagable(
             context = this,
             account = account,
@@ -218,6 +221,15 @@ class MainActivity : AppCompatActivity() {
             onRequestForceExit = { confirmForceExit() },
             onOpenSettings = { openSettings() },
             onOpenNotificationCenter = { openNotificationCenter() },
+            onOpenAgentChat = {
+                // The entry is always visible; the settings toggle gates actual use.
+                if (AppSettings.agentEnabled(this)) {
+                    openAgentChat()
+                } else {
+                    toast("AI 助手未开启，请在设置中打开")
+                    openSettings()
+                }
+            },
             onOpenChat = { openChat(account, ChatDetailViewModel.ChatTarget.fromRecent(it)) },
             onOpenContactProfile = { buddy -> openProfile(account, buddy) },
         )
@@ -265,6 +277,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun performLogout() {
+        AgentSubsystem.onLoggedOut()
         (application as? QmmeApp)?.clearLocalLoginState()
         QmmeApp.forceExit(this)
     }
@@ -282,6 +295,11 @@ class MainActivity : AppCompatActivity() {
             onEnterToSendChanged = { AppSettings.setEnterToSend(this, it) },
             confirmLogout = AppSettings.confirmLogout(this),
             onConfirmLogoutChanged = { AppSettings.setConfirmLogout(this, it) },
+            agentEnabled = AppSettings.agentEnabled(this),
+            onAgentEnabledChanged = { enabled ->
+                AppSettings.setAgentEnabled(this, enabled)
+                AgentSubsystem.setEnabled(this, enabled)
+            },
         )
         pushScreen(ROUTE_SETTINGS, screen)
     }
@@ -544,6 +562,22 @@ class MainActivity : AppCompatActivity() {
         screen.bind(entry.lifecycleOwner, viewModel)
     }
 
+    /** Agent (Fluoxetine) chat page; the subsystem was ensured on login. */
+    private fun openAgentChat() {
+        val screen = AgentChatHikagable(
+            context = this,
+            onBack = { navigator.pop() },
+        )
+        val hikage = screen.hikage.create(this, screenHost, false)
+        val entry = ViewNavigator.Entry(
+            route = ROUTE_AGENT_CHAT,
+            view = hikage.root,
+            disposeAction = screen::dispose,
+        )
+        navigator.push(entry)
+        screen.bind(entry.lifecycleOwner)
+    }
+
     private fun openChatSearch(viewModel: ChatDetailViewModel) {
         val screen = ChatSearchHikagable(
             context = this,
@@ -646,6 +680,7 @@ class MainActivity : AppCompatActivity() {
         const val ROUTE_GROUP_MEMBERS = "group_members"
         const val ROUTE_CHAT_SEARCH = "chat_search"
         const val ROUTE_CHAT_SUMMARY = "chat_summary"
+        const val ROUTE_AGENT_CHAT = "agent_chat"
         const val ROUTE_NOTIFY_CENTER = "notification_center"
         const val ROUTE_CONTACT_PICKER = "contact_picker"
         const val ROUTE_VOICE = "voice"

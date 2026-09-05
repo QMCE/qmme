@@ -38,9 +38,12 @@ class SettingsHikagable(
     private val onEnterToSendChanged: (Boolean) -> Unit,
     private var confirmLogout: Boolean,
     private val onConfirmLogoutChanged: (Boolean) -> Unit,
+    private var agentEnabled: Boolean,
+    private val onAgentEnabledChanged: (Boolean) -> Unit,
 ) : HikageScreen {
     private lateinit var enterToSendSwitch: MaterialSwitch
     private lateinit var confirmLogoutSwitch: MaterialSwitch
+    private lateinit var agentEnabledSwitch: MaterialSwitch
     private var cachedHikage: Hikage.Delegate<*>? = null
 
     override val hikage
@@ -114,6 +117,15 @@ class SettingsHikagable(
                                 onClick = { showAiEndpointDialog() },
                             )
                         }
+                        buildSwitchRow(
+                            title = "AI 助手（Fluoxetine）",
+                            subtitle = "在「我的」页提供可调用 QQ 工具的 AI 对话助手",
+                            initial = agentEnabled,
+                            onAssign = { switch ->
+                                agentEnabledSwitch = switch
+                                switch.setOnCheckedChangeListener(agentEnabledListener)
+                            },
+                        )
                         buildSectionLabel("数据")
                         settingsGroup {
                             row(
@@ -167,6 +179,12 @@ class SettingsHikagable(
         android.widget.CompoundButton.OnCheckedChangeListener { _, checked ->
             confirmLogout = checked
             onConfirmLogoutChanged(checked)
+        }
+
+    private val agentEnabledListener =
+        android.widget.CompoundButton.OnCheckedChangeListener { _, checked ->
+            agentEnabled = checked
+            onAgentEnabledChanged(checked)
         }
 
     private fun confirmClearDrafts() {

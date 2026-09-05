@@ -52,6 +52,9 @@ object AiSettings {
     fun isBuiltin(context: Context): Boolean =
         baseUrl(context).isBlank() && apiKey(context).isBlank() && model(context).isBlank()
 
+    /** The built-in free endpoint, independent of stored prefs. */
+    fun builtin(): Endpoint = Endpoint(baseUrl = BUILTIN_BASE_URL, apiKey = "", model = BUILTIN_MODEL)
+
     /**
      * Returns a normalized endpoint: the built-in free one when nothing is
      * configured, the custom one when all three fields are present, or null
