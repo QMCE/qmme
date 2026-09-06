@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import rj.qmme.data.ai.MessageSummaryClient
 import rj.qmme.data.chat.ChatRepository
 import rj.qmme.data.chat.OfficialPttPlayer
 import rj.qmme.data.chat.PttMediaRef
@@ -33,6 +34,7 @@ import rj.qmme.runtime.RuntimeCoordinator
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 import kotlin.math.round
@@ -138,6 +140,33 @@ class ChatDetailViewModel : ViewModel() {
 
     private val _pendingForwardIds = MutableStateFlow<List<Long>>(emptyList())
     val pendingForwardIds: StateFlow<List<Long>> = _pendingForwardIds.asStateFlow()
+
+    sealed interface MessageSummaryState {
+        data object Idle : MessageSummaryState
+        data class Loading(
+            val selectedCount: Int,
+            val text: String,
+        ) : MessageSummaryState
+
+        data class Success(
+            val selectedCount: Int,
+            val text: String,
+        ) : MessageSummaryState
+
+        data class Error(
+            val selectedCount: Int,
+            val message: String,
+            val retryable: Boolean,
+        ) : MessageSummaryState
+    }
+
+    private val _messageSummaryState =
+        MutableStateFlow<MessageSummaryState>(MessageSummaryState.Idle)
+    val messageSummaryState: StateFlow<MessageSummaryState> = _messageSummaryState.asStateFlow()
+    private val messageSummaryClient = MessageSummaryClient()
+    private var messageSummaryRequest: MessageSummaryClient.Request? = null
+    private var messageSummaryMessages: List<MessageSummaryClient.SummaryMessage> = emptyList()
+    private val messageSummaryGeneration = AtomicInteger()
 
     private val _multiSelectMode = MutableStateFlow(false)
     val multiSelectMode: StateFlow<Boolean> = _multiSelectMode.asStateFlow()
@@ -748,6 +777,100 @@ class ChatDetailViewModel : ViewModel() {
         return started
     }
 
+    /** Summarize the most recent loaded messages of this chat. */
+    fun requestMessageSummary() {
+        val input = _messages.value
+            .asReversed()
+            .mapNotNull { message ->
+                val text = message.text.trim()
+                if (text.isBlank() || text == "...") return@mapNotNull null
+                MessageSummaryClient.SummaryMessage(
+                    sender = message.senderName.ifBlank { if (message.outgoing) "我" else "对方" },
+                    text = text,
+                )
+            }
+            .asReversed()
+            .takeLast(120)
+        if (input.isEmpty()) {
+            _messageSummaryState.value = MessageSummaryState.Error(
+                selectedCount = 0,
+                message = "当前会话没有可总结的内容",
+                retryable = false,
+            )
+            return
+        }
+        messageSummaryMessages = input
+        startMessageSummary(input)
+    }
+
+    fun retryMessageSummary() {
+        if (messageSummaryMessages.isEmpty()) {
+            _messageSummaryState.value = MessageSummaryState.Error(
+                selectedCount = 0,
+                message = "没有可重试的总结请求",
+                retryable = false,
+            )
+            return
+        }
+        startMessageSummary(messageSummaryMessages)
+    }
+
+    fun dismissMessageSummary() {
+        messageSummaryGeneration.incrementAndGet()
+        messageSummaryRequest?.cancel()
+        messageSummaryRequest = null
+        messageSummaryMessages = emptyList()
+        _messageSummaryState.value = MessageSummaryState.Idle
+    }
+
+    private fun startMessageSummary(input: List<MessageSummaryClient.SummaryMessage>) {
+        messageSummaryRequest?.cancel()
+        val generation = messageSummaryGeneration.incrementAndGet()
+        _messageSummaryState.value = MessageSummaryState.Loading(input.size, "")
+        val appContext = com.tencent.qphone.base.util.BaseApplication.getContext()
+        messageSummaryRequest = messageSummaryClient.stream(
+            appContext,
+            input,
+            object : MessageSummaryClient.Listener {
+                override fun onChunk(text: String) {
+                    if (generation != messageSummaryGeneration.get()) return
+                    val current = _messageSummaryState.value as? MessageSummaryState.Loading
+                        ?: return
+                    _messageSummaryState.value = current.copy(text = current.text + text)
+                }
+
+                override fun onComplete() {
+                    if (generation != messageSummaryGeneration.get()) return
+                    val current = _messageSummaryState.value as? MessageSummaryState.Loading
+                        ?: return
+                    messageSummaryRequest = null
+                    if (current.text.isBlank()) {
+                        _messageSummaryState.value = MessageSummaryState.Error(
+                            selectedCount = current.selectedCount,
+                            message = "模型没有返回总结内容",
+                            retryable = true,
+                        )
+                    } else {
+                        _messageSummaryState.value = MessageSummaryState.Success(
+                            selectedCount = current.selectedCount,
+                            text = current.text.trim(),
+                        )
+                    }
+                }
+
+                override fun onError(message: String, retryable: Boolean) {
+                    if (generation != messageSummaryGeneration.get()) return
+                    messageSummaryRequest = null
+                    _messageSummaryState.value = MessageSummaryState.Error(
+                        selectedCount = input.size,
+                        message = message,
+                        retryable = retryable,
+                    )
+                }
+            },
+        )
+    }
+
     fun closeChat(clearTarget: Boolean = true) {
         openJob?.cancel()
         openJob = null
@@ -762,6 +885,7 @@ class ChatDetailViewModel : ViewModel() {
         _messageActionInProgress.value = false
         _pendingReply.value = null
         _pendingForwardIds.value = emptyList()
+        dismissMessageSummary()
         exitMultiSelect()
         OfficialPttPlayer.stopAndRelease()
         if (clearTarget) {

@@ -49,7 +49,6 @@ import rj.qmme.kernel.KernelBridge
 import rj.qmme.runtime.HeartbeatManager
 import rj.qmme.runtime.RuntimeCoordinator
 import java.lang.reflect.Method
-import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.system.exitProcess
@@ -537,38 +536,25 @@ class QmmeApp : WatchApplicationDelegate() {
         SignatureProbe.dump(this)
         // Kept idempotent for warm-starts and vendor process recreation.
         initializeQmmkv()
-        // CRITICAL: Initialize official startup director FIRST before any custom init
+        // qq-sdk.jar（完整版）的官方启动链在 super.onCreate() 内部已运行
+        // NtStartupDirector("application") / MiscInitTask / BeaconSDKInitTask。
+        // QMCE 用同一个 jar 验证过：宿主不得再手动触发这些任务，重复初始化会
+        // 破坏官方启动状态并让 MobileQQ 直接自杀（System.exit），表现为打开即闪退。
+        // 这里只保留 QIMEI 隐私同意写入（幂等、无副作用），任务图交给官方链；
+        // Beacon 兜底由 OfficialReportBridge.initialize 负责。
+        ensurePrivacyConsentForQimei(currentProcessName())
         if (isMainProcess()) {
-            try {
-                val directorClass = Class.forName("com.tencent.qqnt.watch.startup.director.NtStartupDirector")
-                val aMethod = directorClass.getMethod("a", android.content.Context::class.java, String::class.java)
-                
-                // Set context like official does - MUST do this first!
-                directorClass.getDeclaredField("c").apply { isAccessible = true }.set(null, this)
-                mqq.app.MobileQQ.sMobileQQ = this
-                
-                Log.i("QMME", "Calling NtStartupDirector.a(context, 'application')...")
-                aMethod.invoke(null, this, "application")
-                Log.i("QMME", "✓ NtStartupDirector completed successfully!")
-            } catch (e: Exception) {
-                Log.e("QMME-ERROR", "✗ NtStartupDirector failed: ${e.javaClass.simpleName}: ${e.message}", e)
-            }
-            
             // Then proceed with all custom initializations AFTER official chain
             BridgeBugly.init(this)
             ConfigurationManager.init(this)
             TelemetryBridge.init()
         }
-        
-        // The stock ApplicationCreate dispatcher is configured per process.  In this
-        // port its task graph can be absent when MSF starts independently, so make the
-        // QIMEI-critical part explicit before custom code can attach MSF or start SSO.
-        initializeOfficialQimeiStartup()
-
-        // Then load PowHelper and other components
-        rj.qmme.fix.PoWHelper.ensureLoaded()
-        
         if (isMainProcess()) {
+            // KernelSetterImpl 首次使用前必须就位的全局配置 patch（对照 QMCE
+            // ensureEarlyNativeBootstrap），否则内核 native CheckConfig 读到
+            // 空版本/平台信息。全 runCatching，失败只降级不阻断。
+            runCatching { KernelBridge.ensureEarlyNativeBootstrap() }
+                .onFailure { Log.w("QMME", "early native bootstrap failed", it) }
             // Keep MobileQQ's own cold-start lifecycle intact.  In particular, do not
             // replay LoginPrefs here: setSortAccountList()/login() during Application
             // startup can make MobileQQ switch runtimes while MainService is still being
@@ -729,145 +715,6 @@ class QmmeApp : WatchApplicationDelegate() {
         Log.w("QMME", "getCustomGuid failed", error)
     }.getOrNull()
 
-    private val qimeiStartupAttempted = AtomicBoolean(false)
-
-    /**
-     * Runs the QIMEI portion of the official Watch cold-start graph synchronously.
-     *
-     * The Watch configuration intentionally differs by process: the main process
-     * dispatches MiscInitTask followed by BeaconSDKInitTask, while the MSF process
-     * dispatches MiscInitTask only.  Do not infer ordering from the task enum; these
-     * lists come from MainProcessConfigReader and MSFProcessConfigReader in the
-     * matching 9.0.7 runtime.
-     */
-    private fun initializeOfficialQimeiStartup() {
-        if (!qimeiStartupAttempted.compareAndSet(false, true)) return
-
-        val process = currentProcessName()
-        val taskNames = if (isMsfProcess()) {
-            listOf("MiscInitTask")
-        } else {
-            listOf("MiscInitTask", "BeaconSDKInitTask")
-        }
-        val loader = MobileQQ::class.java.classLoader
-        Log.i(
-            "QMME-QIMEI",
-            "startup begin pid=${Process.myPid()} process=$process tasks=${taskNames.joinToString(",")} " +
-                "loader=${loaderIdentity(loader)}",
-        )
-
-        // Qqimei.b(false) refuses to initialize unless PrivacyPolicyHelper.a() is true,
-        // which only happens when privacypolicy_state == "1".  This client has no consent
-        // screen, so record launch as consent before the task reads the gate.  Per-process:
-        // each process re-reads its own MMKV/static state, so this must run everywhere.
-        ensurePrivacyConsentForQimei(process)
-
-        val completed = taskNames.all { taskName ->
-            runOfficialStartupTask(taskName, loader, process)
-        }
-        val qimei = runCatching { com.tencent.mobileqq.statistics.Qqimei.a() }.getOrNull()
-        val beaconInitialized = officialBeaconInitialized()
-        val qimeiState = if (qimei.isNullOrEmpty()) {
-            "qimei36Len=0"
-        } else {
-            "qimei36Len=${qimei.length} qimei36Digest=${shortDigest(qimei)}"
-        }
-        val outcome = if (completed) "completed" else "failed"
-        Log.i(
-            "QMME-QIMEI",
-            "startup $outcome pid=${Process.myPid()} process=$process beacon=$beaconInitialized $qimeiState",
-        )
-        OfflineDiagnostics.record(
-            this,
-            "qimei_startup_$outcome",
-            "process=$process beacon=$beaconInitialized qimei36Len=${qimei?.length ?: 0}",
-        )
-
-        // The register itself only proceeds in the main process: QIMEI's own
-        // u/a.f() gate (currentProcessName == packageName) makes ai/d.run() take
-        // the broadcast-wait branch in :MSF.  The official Watch graph relies on
-        // the main process to schedule ai/d.run() through ai/e's thread pool after
-        // the SDK reports "QM is null, need update Qm"; in this port the main
-        // process can be preloaded before that dispatch completes, so drive the
-        // register explicitly here when the cached value is still empty.
-        if (isMainProcess() && qimei.isNullOrEmpty()) {
-            forceQimeiRegister(process, loader)
-        }
-    }
-
-    /**
-     * Main-process only: fetch the per-appkey ai/d register runnable from the
-     * SDK's static registry and execute it directly.  This is the same object
-     * ai/e.k() schedules on the QIMEI thread pool when it detects "QM is null";
-     * running it here just removes the pool/timing dependency.  ai/d.run() still
-     * applies its own network check and native register call, so this cannot
-     * produce a value the official path would not.
-     */
-    private fun forceQimeiRegister(process: String, loader: ClassLoader?) {
-        Thread {
-            runCatching {
-                val dClass = Class.forName("com.tencent.qimei.ai.d", true, loader)
-                val mapField = dClass.getDeclaredField("i")
-                mapField.isAccessible = true
-                @Suppress("UNCHECKED_CAST")
-                val registry = mapField.get(null) as? Map<String, Any>
-                val appKey = QIMEI_APP_KEY
-                val dInstance = registry?.get(appKey)
-                if (dInstance == null) {
-                    Log.w("QMME-QIMEI", "force register: no ai/d instance for $appKey process=$process")
-                    return@runCatching
-                }
-                val run = dInstance.javaClass.getMethod("run")
-                Log.i("QMME-QIMEI", "force register: executing ai/d.run() process=$process")
-                run.invoke(dInstance)
-                val after = runCatching { com.tencent.mobileqq.statistics.Qqimei.a() }.getOrNull()
-                Log.i(
-                    "QMME-QIMEI",
-                    "force register: after=${if (after.isNullOrEmpty()) "still-empty" else "len=${after.length}"}",
-                )
-            }.onFailure { error ->
-                val root = (error as? java.lang.reflect.InvocationTargetException)?.targetException ?: error
-                Log.e("QMME-QIMEI", "force register failed process=$process error=${root.javaClass.simpleName}", root)
-                OfflineDiagnostics.record(
-                    this,
-                    "qimei_force_register_failed",
-                    "process=$process error=${root.javaClass.simpleName}",
-                )
-            }
-        }.apply {
-            name = "qmme-force-qimei-register"
-            start()
-        }
-    }
-
-    private fun runOfficialStartupTask(taskName: String, loader: ClassLoader?, process: String): Boolean {
-        val className = "com.tencent.qqnt.watch.startup.task.$taskName"
-        Log.i("QMME-QIMEI", "task begin name=$taskName process=$process")
-        return runCatching {
-            val taskClass = Class.forName(className, true, loader)
-            val task = taskClass.getDeclaredConstructor().newInstance()
-            taskClass.getMethod("a", Context::class.java).invoke(task, this)
-            Log.i(
-                "QMME-QIMEI",
-                "task complete name=$taskName process=$process loader=${loaderIdentity(taskClass.classLoader)}",
-            )
-            true
-        }.getOrElse { error ->
-            val root = (error as? java.lang.reflect.InvocationTargetException)?.targetException ?: error
-            Log.e(
-                "QMME-QIMEI",
-                "task failed name=$taskName process=$process error=${root.javaClass.simpleName}",
-                root,
-            )
-            OfflineDiagnostics.record(
-                this,
-                "qimei_startup_task_failed",
-                "process=$process task=$taskName error=${root.javaClass.simpleName}",
-            )
-            false
-        }
-    }
-
     /**
      * Records launch as privacy consent so `PrivacyPolicyHelper.a()` returns true and
      * `Qqimei.b(false)` proceeds.  It reads MMKV `common_mmkv_configurations`/
@@ -898,28 +745,12 @@ class QmmeApp : WatchApplicationDelegate() {
         }
     }
 
-    private fun officialBeaconInitialized(): Boolean = runCatching {
-        val beaconClass = Class.forName("com.tencent.mobileqq.statistics.QQBeaconReport")
-        val initialized = beaconClass.getDeclaredField("a").apply { isAccessible = true }
-            .get(null) as? AtomicBoolean
-        initialized?.get() == true
-    }.getOrDefault(false)
-
     private fun currentProcessName(): String = if (AndroidVersion.isAtLeast(AndroidVersion.P)) {
         processName
     } else {
         currentProcessNameByActivityThread
             ?: runCatching { currentProcessNameByActivityManager }.getOrNull()
     }.orEmpty()
-
-    private fun loaderIdentity(loader: ClassLoader?): String =
-        if (loader == null) "bootstrap" else "${loader.javaClass.name}@${System.identityHashCode(loader)}"
-
-    private fun shortDigest(value: String): String = runCatching {
-        MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
-            .take(6)
-            .joinToString("") { byte -> "%02x".format(byte) }
-    }.getOrDefault("unavailable")
 
     @Volatile
     private var cachedMsfAdapter: MSFInterfaceAdapter? = null

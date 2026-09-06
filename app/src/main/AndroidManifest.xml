@@ -92,6 +92,13 @@
             <meta-data android:name="SERVICE_VERSION" android:value="1" />
         </service>
 
+        <!-- AV call management service declared by the official QQ Watch APK;
+             QCE 对照声明，缺声明时官方 QavSDK 启动期 startService 会直接抛异常。 -->
+        <service
+            android:name="com.tencent.service.QavManageService"
+            android:exported="false"
+            android:foregroundServiceType="camera|microphone" />
+
         <receiver
             android:name="com.tencent.qqnt.watch.app.HostNetConnInfoCenter"
             android:exported="false"

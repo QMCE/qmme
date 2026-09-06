@@ -390,145 +390,169 @@ class AuthViewModel : ViewModel() {
 
     private fun makeObserver(generation: Long): QrWtLoginExtObserver =
         object : QrWtLoginExtObserver() {
-            override fun a() {
-                viewModelScope.launch {
-                    failRequest(generation, "登录服务返回异常")
-                }
-            }
-
-            override fun b(
-                picBuf: ByteArray?,
-                expireTime: Long,
-                queryTime: Long,
-                ret: Int,
-                errMsg: String?
-            ) {
-                viewModelScope.launch(Dispatchers.Default) {
-                    val bitmap = if (ret == 0 && picBuf != null) {
-                        picBuf.decodeToBitmapOrNull(0, picBuf.size)
-                    } else {
-                        null
-                    }
-                    withContext(Dispatchers.Main) {
-                        if (!isCurrent(generation)) return@withContext
-                        callbackWatchdogJob?.cancel()
-                        if (ret != 0 || picBuf == null) {
-                            failRequest(
-                                generation,
-                                "二维码获取失败 ($ret)${errMsg?.let { ": $it" } ?: ""}")
-                            return@withContext
-                        }
-                        if (bitmap == null) {
-                            failRequest(generation, "二维码图片解码失败")
-                            return@withContext
-                        }
-                        _qrBitmap.value = bitmap
-                        buildTime = System.currentTimeMillis()
-                        expireTimeSec = expireTime.coerceAtLeast(1L)
-                        queryTimeSec = queryTime.coerceAtLeast(1L)
-                        remainingSec = expireTimeSec
-                        setState(LoginUiState.QrReady, "请扫码 (${expireTimeSec}s)", busy = false)
-                        appendLog("二维码 ${bitmap.width}x${bitmap.height} expire=$expireTime query=$queryTime")
-                        val service = wtService
-                        if (service != null) startPolling(service, generation)
-                        else failRequest(generation, "登录服务已断开")
-                    }
-                }
-            }
-
-            override fun d(
-                account: String?,
-                accountType: Int,
-                sigCreateTime: Long,
-                ret: Int,
-                errMsg: String?
-            ) {
-                viewModelScope.launch {
-                    if (!isCurrent(generation)) return@launch
-                    when (ret) {
-                        0 -> {
-                            val cleanAccount = account.orEmpty()
-                            if (cleanAccount.isBlank()) {
-                                failRequest(generation, "登录服务未返回账号")
-                                return@launch
-                            }
-                            appendLog("扫码确认 account=$cleanAccount")
-                            pollJob?.cancel()
-                            callbackWatchdogJob?.cancel()
-                            ticketAccount = cleanAccount
-                            ticketAttempt = 0
-                            requestTicket(generation)
-                        }
-
-                        48 -> Unit
-                        53 -> {
-                            callbackWatchdogJob?.cancel()
-                            setState(LoginUiState.Scanned, "已扫码，等待确认", busy = false)
-                        }
-
-                        17, 54 -> expireRequest(generation)
-                        else -> appendLog("query ret=$ret ${errMsg.orEmpty()}")
-                    }
-                }
-            }
-
-            override fun c(
-                userAccount: String?,
-                appId: Long,
-                mainSigMap: Int,
-                subDstAppId: Long,
-                ret: Int,
-                errMsg: ErrMsg?,
-            ) {
-                viewModelScope.launch {
-                    if (!isCurrent(generation)) return@launch
-                    pollJob?.cancel()
-                    callbackWatchdogJob?.cancel()
-                    val cleanAccount = userAccount.orEmpty()
-                    if (ret != 0 || cleanAccount.isBlank()) {
-                        scheduleTicketRetry(
-                            generation,
-                            "换票失败 ($ret)${
-                                errMsg?.title?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""
-                            }",
-                        )
-                        return@launch
-                    }
-
-                    ticketRetryJob?.cancel()
-                    appendLog("换票成功 uin=$cleanAccount")
-                    setState(LoginUiState.Binding, "正在绑定账号...", busy = true)
-                    val account = SimpleAccount().apply {
-                        uin = cleanAccount
-                        loginProcess = BuildConfig.APPLICATION_ID
-                        setAttribute(SimpleAccount._ISLOGINED, "true")
-                        setAttribute(SimpleAccount._LOGINPROCESS, BuildConfig.APPLICATION_ID)
-                        setAttribute(
-                            SimpleAccount._LOGINTIME,
-                            System.currentTimeMillis().toString()
-                        )
-                    }
-                    val bind = withContext(Dispatchers.IO) {
-                        QmmeApp.bindLoggedInAccount(account)
-                    }
-                    if (!isCurrent(generation)) return@launch
-                    appendLog("绑定: $bind")
-                    if (bind == "ok") {
-                        invalidateRequest(clearQr = true)
-                        _statusText.value = "登录成功 $cleanAccount"
-                        _isBusy.value = false
-                        _loginResult.emit(cleanAccount to account)
-                    } else {
-                        failRequest(generation, "绑定失败")
-                        resetFailedLoginSession()
-                    }
-                }
-            }
+            // IMPORTANT: The SDK's QrWtLoginExtObserver.onReceive() dispatches callbacks
+            // via obfuscated JVM method names (a, b, c, d). However qq-sdk.jar's Kotlin
+            // metadata incorrectly advertises the readable names (OnFetchCodeSig, etc.)
+            // as the JVM names, so overriding a/b/c/d from Kotlin compiles into methods
+            // that are NEVER called at runtime (learned in QMCE).
+            //
+            // Fix: override onReceive() and manually unpack the Bundle, completely
+            // bypassing the SDK's broken dispatch. Bundle keys confirmed via javap + logcat.
 
             override fun onReceive(type: Int, isSuccess: Boolean, data: Bundle?) {
                 val keys = data?.keySet()?.joinToString(",") ?: ""
                 Log.d(TAG, "auth observer type=$type success=$isSuccess keys=$keys")
-                super.onReceive(type, isSuccess, data)
+                // Do NOT call super.onReceive() — it would dispatch to a/b/c/d which are no-ops.
+                if (data == null) {
+                    // type=0 with null bundle: treat as generic error
+                    viewModelScope.launch {
+                        failRequest(generation, "登录服务返回异常")
+                    }
+                    return
+                }
+                when (type) {
+                    0 -> {
+                        // OnException: failure/error from the login service
+                        val error = data.getString("error").orEmpty()
+                        viewModelScope.launch {
+                            failRequest(
+                                generation,
+                                error.takeIf { it.isNotBlank() } ?: "登录服务返回异常",
+                            )
+                        }
+                    }
+
+                    1 -> {
+                        // OnFetchCodeSig: QR code image data ready (picBuf = JPEG bytes)
+                        val picBuf = data.getByteArray("picBuf")
+                        val expireTime = data.getLong("expireTime")
+                        val queryTime = data.getLong("queryTime")
+                        val ret = data.getInt("ret")
+                        val errMsg = data.getString("errMsg")
+                        viewModelScope.launch(Dispatchers.Default) {
+                            val bitmap = if (ret == 0 && picBuf != null) {
+                                picBuf.decodeToBitmapOrNull(0, picBuf.size)
+                            } else {
+                                null
+                            }
+                            withContext(Dispatchers.Main) {
+                                if (!isCurrent(generation)) return@withContext
+                                callbackWatchdogJob?.cancel()
+                                if (ret != 0 || picBuf == null) {
+                                    failRequest(
+                                        generation,
+                                        "二维码获取失败 ($ret)${errMsg?.let { ": $it" } ?: ""}")
+                                    return@withContext
+                                }
+                                if (bitmap == null) {
+                                    failRequest(generation, "二维码图片解码失败")
+                                    return@withContext
+                                }
+                                _qrBitmap.value = bitmap
+                                buildTime = System.currentTimeMillis()
+                                expireTimeSec = expireTime.coerceAtLeast(1L)
+                                queryTimeSec = queryTime.coerceAtLeast(1L)
+                                remainingSec = expireTimeSec
+                                setState(LoginUiState.QrReady, "请扫码 (${expireTimeSec}s)", busy = false)
+                                appendLog("二维码 ${bitmap.width}x${bitmap.height} expire=$expireTime query=$queryTime")
+                                val service = wtService
+                                if (service != null) startPolling(service, generation)
+                                else failRequest(generation, "登录服务已断开")
+                            }
+                        }
+                    }
+
+                    2 -> {
+                        // OnQueryCodeResult: scan status poll response
+                        val account = data.getString("account")
+                        val ret = data.getInt("ret")
+                        val errMsg = data.getString("errMsg")
+                        viewModelScope.launch {
+                            if (!isCurrent(generation)) return@launch
+                            when (ret) {
+                                0 -> {
+                                    val cleanAccount = account.orEmpty()
+                                    if (cleanAccount.isBlank()) {
+                                        failRequest(generation, "登录服务未返回账号")
+                                        return@launch
+                                    }
+                                    appendLog("扫码确认 account=$cleanAccount")
+                                    pollJob?.cancel()
+                                    callbackWatchdogJob?.cancel()
+                                    ticketAccount = cleanAccount
+                                    ticketAttempt = 0
+                                    requestTicket(generation)
+                                }
+
+                                48 -> Unit
+                                53 -> {
+                                    callbackWatchdogJob?.cancel()
+                                    setState(LoginUiState.Scanned, "已扫码，等待确认", busy = false)
+                                }
+
+                                17, 54 -> expireRequest(generation)
+                                else -> appendLog("query ret=$ret ${errMsg.orEmpty()}")
+                            }
+                        }
+                    }
+
+                    3 -> {
+                        // OnGetStWithQrSig: ticket exchange result after scan confirmed
+                        val userAccount = data.getString("userAccount")
+                        val ret = data.getInt("ret")
+                        @Suppress("DEPRECATION")
+                        val lastError = data.getParcelable("lastError") as? ErrMsg
+                        val error = data.getString("error")
+                        val errorUrl = data.getString("errorurl")
+                        appendLog(
+                            "换票 type=3 ret=$ret account=$userAccount " +
+                                "errTitle=${lastError?.title} error=$error errorurl=$errorUrl",
+                        )
+                        viewModelScope.launch {
+                            if (!isCurrent(generation)) return@launch
+                            pollJob?.cancel()
+                            callbackWatchdogJob?.cancel()
+                            val cleanAccount = userAccount.orEmpty()
+                            if (ret != 0 || cleanAccount.isBlank()) {
+                                scheduleTicketRetry(
+                                    generation,
+                                    "换票失败 ($ret)${
+                                        lastError?.title?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""
+                                    }",
+                                )
+                                return@launch
+                            }
+
+                            ticketRetryJob?.cancel()
+                            appendLog("换票成功 uin=$cleanAccount")
+                            setState(LoginUiState.Binding, "正在绑定账号...", busy = true)
+                            val account = SimpleAccount().apply {
+                                uin = cleanAccount
+                                loginProcess = BuildConfig.APPLICATION_ID
+                                setAttribute(SimpleAccount._ISLOGINED, "true")
+                                setAttribute(SimpleAccount._LOGINPROCESS, BuildConfig.APPLICATION_ID)
+                                setAttribute(
+                                    SimpleAccount._LOGINTIME,
+                                    System.currentTimeMillis().toString()
+                                )
+                            }
+                            val bind = withContext(Dispatchers.IO) {
+                                QmmeApp.bindLoggedInAccount(account)
+                            }
+                            if (!isCurrent(generation)) return@launch
+                            appendLog("绑定: $bind")
+                            if (bind == "ok") {
+                                invalidateRequest(clearQr = true)
+                                _statusText.value = "登录成功 $cleanAccount"
+                                _isBusy.value = false
+                                _loginResult.emit(cleanAccount to account)
+                            } else {
+                                failRequest(generation, "绑定失败")
+                                resetFailedLoginSession()
+                            }
+                        }
+                    }
+                }
             }
         }
 

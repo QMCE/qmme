@@ -4,6 +4,164 @@
 > 并在 `~/qmme/ntpro` 用 Kotlin/Android 重实现。原则：**只落已经由静态证据
 > 证明的结论，不臆造参数/语义**。
 
+## 0. 2026-09-05 运行时 jar 迁移（feat/migrate-qq-sdk）
+
+运行时从裁剪版 `qq-core-watch-runtime.jar`（25 856 类）切换为 QMCE 同源的完整版
+`qq-sdk.jar`（34 543 类，手表 QQ 9.0.7.2563，多出 qqlive/thumbplayer/richframework
+等富媒体链路）。对 jar 做了两步 ASM 离线处理：
+
+1. **包名重定向**（4 条精确映射，34 543/34 543 全量通过，0 残留）：
+   `rj/qmce/lite/Flag` → `rj/qmme/Flag`；`rj/qmce/lite/fix/{KtFix,PendingIntentCompat,ResCompat}` → `rj/qmme/fix/*`。
+2. **签名 patch 重打**（qmme 特有，qmce jar 没有）：5 个方法体重定向到
+   `rj.qmme.fix.PkgSignFix` —— `oicq/wlogin_sdk/tools/util.{get_apk_id,get_apk_v,getPkgSigFromApkName}`、
+   `com/tencent/mobileqq/msf/core/auth/c.a(PackageManager,int)` 与 `c.a(PackageManager,String[])`。
+
+配套源码改动：
+
+- `fix/KtFix.kt`：以 qmce 版为基准重写，并按 `work/ktfix-contract.txt`（153 条 jar
+  调用签名，ScanHostCalls 扫描产出）补齐 47 个缺失桥接（`map`/`filter`/`zip`/`asSequence`/
+  `averageOfInt` 等）；修正 `throwIndexOverflow` 为 void 返回（kotlinc 2.4 把 `Nothing`
+  编译成 `Void`，与 jar 的 `()V` 调用不匹配）。**契约差集 = 0**（kotlinc 2.4.0 编译 +
+  ContractCheck 核对）。
+- 新增 `fix/ResCompat.kt`（官方 9.0.7 字符串表兜底，勿手改）与 `fix/PendingIntentCompat.kt`
+  （S+ 强制 FLAG_IMMUTABLE，targetSdk 37 必需）。
+- `Flag.kt` 首次真正生效：新 jar 的 `QLog.addLogItem` 读取 `DISABLE_QLOG_LOCAL_WRITE`。
+- 构建：依赖切到 `qq-sdk.jar`；新增 `app/multidex-proguard.pro`（对照 qmce 改包名）；
+  `keepRules/rules.keep` 补 `rj.qmme.Flag` / `rj.qmme.fix.**`；version 0.5.0(8)。
+
+**回归验证清单（真机）**：登录（重点 WtLogin 签名链）→ 会话/收发消息 → 图片 → 群管理 →
+设置页；`logcat` 过滤 `NoSuchMethod|NoClassDefFoundError|KtFix|PkgSignFix` 应无输出。
+已知观察项：jar 引用 `com.bytedance.shadowhook` 但 qmme 走自研 BoostMultiDex stub，
+预计不触发；APK 体积 +9 MB 左右。
+
+## 0.1 2026-09-05 QMCE→QMME 功能迁移（同分支）
+
+计划见 `/workspace/QMME-FEATURE-MIGRATION-PLAN.md`。数据/服务层从 QMCE 直接迁移
+（sed 改包名 `rj.qmce.lite` → `rj.qmme`），UI 层全部用 Hikage + M3 重写，
+手表专属（QmceWearSurfaces 等）剔除。均已过 `:app:compileDebugKotlin`。
+
+**第一批 通知体系**（4ac89aa / 0ad6afe）：
+
+- `kernel/SdkCompat.kt` 补 6 个内核方法桥（buddy 监听 v/c、通知 l/清、recent g/x）。
+- `data/notify/`：ContactNotifyRepository(IKernelBuddyListener)、GroupNotifyRepository
+  (IKernelGroupListener)、SharedNotifyRepositories 单例；`notify/` 九件
+  （Channels/ForegroundSession/MessageNotifier/ContactSystemNotifier/DeepLinks/…）。
+- `NotificationCenterViewModel` + `NotificationCenterHikagable`：好友申请 + 群系统通知，
+  拒绝/同意操作；MainHikagable "我的"页入口；`MainActivity` 登录后 start /
+  登出 stop 通知服务，通知点击 deep link 进对应聊天。
+- `viewmodel/AuthViewModel`：makeObserver 全重写为 override `onReceive(type,isSuccess,data)`
+  手动解 Bundle —— **qq-sdk.jar 的 Kotlin metadata 对 QrWtLoginExtObserver 混淆名
+  a/b/c/d 映射错误，按 metadata override 永远不会被回调**（QMCE 已踩坑，此处沿用）。
+
+**第二批 聊天 AI 摘要**（ae34273）：
+
+- `data/AiSettings.kt`：本机 prefs 保存 baseUrl/apiKey/model；`resolve()` 缺一返 null；
+  URL 归一化补 `/chat/completions`。
+- `data/ai/MessageSummaryClient.kt`：OpenAI 兼容 SSE 流式（HttpURLConnection +
+  `data:` 行 + `[DONE]`），Request 可取消（disconnect + interrupt）。
+- `ChatDetailViewModel`：MessageSummaryState（Idle/Loading/Success/Error）状态机，
+  AtomicInteger generation 防旧流写入；取已加载消息最后 120 条做 transcript。
+- `ChatDetailHikagable` 工具栏加"AI 摘要"入口（多选模式同步隐藏）→
+  `ChatSummaryHikagable`（流式渲染、可重试、dispose 取消）；closeChat 也 dismiss。
+- `SettingsHikagable`：AI 服务设置对话框。
+
+**第三批 AI 摘要端点内置**（f5b2c33）：
+
+- `AiSettings` 内置 opencode zen 免费端点：`https://opencode.ai/zen/v1/chat/completions`
+  + 模型 `big-pickle`（curl 实测匿名可用、cost=0）。三项全空 → 用内置端点；
+  部分填写 → 视为自定义不完整（设置页给出三态副标题）；齐全 → 自定义端点。
+- big-pickle 是混合推理模型，`reasoning_content` 恒为 null、思考混在 content，
+  网关对 `reasoning_effort/reasoning/thinking` 参数均不生效——"不思考"用
+  system prompt 约束（"直接输出总结正文，不要展示思考或推理过程"）。
+
+**第四批 AI Agent（Fluoxetine）**（d415934）：
+
+- `agent/` 11 文件 + `agent/kernel/` 4 文件，自 QMCE `rj.qmce.lite.agent.*` 迁移
+  （sed 改包名）：AgentEngine（多轮 tool-calling，MAX_TURNS=8、run-id 防串、
+  LLM_WAIT 200s）、LlmClient（SSE + `delta.tool_calls` 流式累积）、
+  ApprovalController（写操作审批，120s 超时 Deny）、AgentEventBus（Proxy 动态
+  代理注册 msg/buddy/group 内核监听）、AgentSession/AgentSessionStore/AgentTimer。
+- `AgentToolRegistrar` 注册 14 工具 + EventMonitor + Timer；**SendPacketTool 不迁**
+  （QMME 无 packet 数据层）。
+- 适配点：`markMessagesRead(contact)` 去 runtime 参；`connect(runtime)` 去
+  `bindRichMedia`；`QmceApplication.ensureRuntime()` → `QmmeApp.ensureRuntime()`；
+  QmceLog → android.util.Log。
+- UI：`AgentChatHikagable`（self/assistant/system 三态气泡 + 状态卡 + 审批卡 +
+  停止键）；`MainHikagable` "我的"页常驻入口（未开启时 toast 引导到设置）；
+  `SettingsHikagable` 加"AI 助手（Fluoxetine）"开关（`AppSettings.agent_enabled`，
+  默认关）；`MainActivity` 登录/登出接线 `AgentSubsystem.onLoggedIn/onLoggedOut`。
+- `kernel/SdkCompat` 补 `addMsgListener`/"o"、`removeMsgListener`/"d"、
+  `getRecentContactFromCache`/"D"（runCatching 包裹返 null）。
+
+**暂缓**：OTA/更新（QMME 走手动分发），理由见计划文档。
+
+## 0.2 2026-09-05 修复"打开就炸"（启动序列对齐 QMCE）
+
+现象：feat/migrate-qq-sdk 构建的 APK 装机（华为 Mate 70 Pro+）一点图标就闪退，
+CrashActivity 来不及显示。根因：**分支切到完整版 qq-sdk.jar 后，QmmeApp.onCreate
+里旧 jar 时代的手动启动补丁没有撤掉，与新 jar 的官方启动链重复执行**：
+
+1. `super.onCreate()`（WatchApplicationDelegate → MobileQQ 官方链）在新 jar 内部
+   已经运行 NtStartupDirector("application") / MiscInitTask / BeaconSDKInitTask；
+   QMCE 用同一个 jar 验证过**宿主不得再手动触发**。旧代码随后又手动跑了一遍
+   NtStartupDirector + QIMEI 任务图 + forceQimeiRegister，重复初始化破坏官方启动
+   状态，MobileQQ 会直接 `System.exit(-1)` 自杀——不走 UncaughtExceptionHandler，
+   CrashCatcher 拦不住，表现为纯闪退。
+2. QMME 缺 QMCE 的 `KernelBridge.ensureEarlyNativeBootstrap()`：内核
+   KernelSetterImpl.sInitialModule/sAppSetting 未 patch，native CheckConfig 读到
+   空版本/平台。
+
+修复（对齐 QMCE 已验证序列）：
+
+- `QmmeApp.onCreate`：删除 NtStartupDirector 手动调用、initializeOfficialQimeiStartup/
+  forceQimeiRegister/runOfficialStartupTask/officialBeaconInitialized 及
+  PoWHelper.ensureLoaded 调用；保留 `ensurePrivacyConsentForQimei`（幂等写
+  `privacypolicy_state=1`，官方任务图仍需要）；主进程新增
+  `runCatching { KernelBridge.ensureEarlyNativeBootstrap() }`（ensureRuntime 前）。
+  Beacon 兜底仍由 `OfficialReportBridge.initialize` 负责（QMCE 同款 fallback）。
+- `kernel/KernelBridge.kt`：从 QMCE 移植 `ensureEarlyNativeBootstrap` +
+  `injectInitialModule`（动态代理 patch WrapperEngineGlobalConfig：
+  appVersion=9.0.7.2563 / platformType=1 / appType=7 / osVersion / qua）+
+  `reinitWrapperEngineConfig`（KernelSetterImpl.Companion.c()）+
+  `injectSAppSetting`/`createPatchedAppSettingInjector`（IAppSettingInject 代理，
+  d/e→9.0.7.2563、h→2563、j→V 9.0.7.2563）。全 runCatching，失败只降级。
+- `QmmeApp.ensureRuntime()` 等其余启动代码未动（msf 进程的
+  initializeSecuritySigning 保留，全防御性）。
+
+回归观察项：`logcat` 过滤 `QMME-QIMEI|QMME|KernelBridge`，确认 NtStartupDirector
+不再被手动调用、`bind: patched WrapperEngineGlobalConfig` 出现一次。
+
+### §0.2.1 第二轮深挖（仍炸后，逐层对照 QMCE）
+
+第一轮修复后真机仍炸。以 "QMCE OK" 为锚点逐层 diff 宿主，找到三个更早的炸点
+（全部发生在 Application 阶段 / CrashCatcher 安装前后，先于第一轮的修复点）：
+
+1. **缺 `me.jessyan:autosize`（最致命）**：官方 `WatchApplicationDelegate`
+   （QmmeApp 的父类）字节码直接调用 `AutoSizeConfig`/`UnitsManager`。
+   QmmeApp 实例化即 NoClassDefFoundError → Application 创建失败 → 纯闪退。
+   QMCE 有 `jessyan-autosize:1.2.1` 依赖所以能跑。
+2. **assets 全缺**：QMME 自项目诞生就没有 assets/；旧裁剪版 jar 不需要，
+   完整版官方启动链需要 `qq.key`/`fekit.key`（安全签名）、`soconfig.cfg`/
+   `jni.ini`（native 配置）、`face_config.json`（表情）等。已从 QMCE 全量
+   拷贝 20 项（3.1MB，同源 9.0.7.2563，逐字节一致）。
+3. **签名伪装链是半成品**：QMME 的 `SigningInfoCompat` 在 signingInfo 为
+   null 时直接放弃，`PackageSignatureProvider.rewritePackageInfo` 不填空
+   signatures、不清 `FLAG_DEBUGGABLE`。已用 QMCE 版整体覆盖三个文件
+   （SigningInfoCompat 含反射重建 SigningInfo + 证书历史重写）。
+
+依赖对齐（app/build.gradle.kts，版本对照 QMCE）：`me.jessyan:autosize:1.2.1`、
+`okhttp 4.12.0`（MSF 网络层 119 类引用）、`commons-lang3:3.17.0`、
+`lifecycle-process:2.7.0`（ProcessLifecycleOwner 4 处引用）。
+**gson 不可外部引入**——`com/google/gson` 已内嵌在 qq-sdk.jar（228 处引用），
+外部再引会 Duplicate class。constraintlayout/room/navigation/viewpager2 同理
+不缺：引用计数虽大（356/112/291/96），但 QMCE 同样没依赖它们也能跑，
+证明官方启动链不触及（AIO UI/DB 后台类）。
+
+res 对齐：官方 Toast 布局组（layout/qq_toast_main_layout + drawable/
+qq_toast_background + values/qui_toast_colors）、drawable-nodpi/qqpro_ic_fg、
+raw 图标、values-notnight 颜色。Manifest 补声明 `QavManageService`
+（官方 QavSDK 对照声明）。
+
 ## 1. 工作区
 
 | 路径 | 作用 |

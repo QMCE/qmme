@@ -12,7 +12,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
 
-@SuppressWarnings("deprecation")
 public final class PackageSignatureProvider {
     private static final String TAG = "PackageSignatureProvider";
     private static final int API_ANDROID_17 = 37;
@@ -31,7 +30,8 @@ public final class PackageSignatureProvider {
             installed = true;
             return;
         }
-        replacePackageInfoCreator(SPOOFED_SIGNATURE);
+        Signature signature = SPOOFED_SIGNATURE;
+        replacePackageInfoCreator(signature);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             HiddenApiAccess.addHiddenApiExemptions(
                     "Landroid/os/Parcel;",
@@ -55,14 +55,22 @@ public final class PackageSignatureProvider {
         }
         Signature signature = SPOOFED_SIGNATURE;
         Signature[] signatures = packageInfo.signatures;
-        if (signatures != null && signatures.length > 0) {
-            signatures[0] = signature;
+        if (signatures == null || signatures.length == 0) {
+            packageInfo.signatures = new Signature[]{signature};
+        } else {
+            for (int i = 0; i < signatures.length; i++) {
+                signatures[i] = signature;
+            }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             SigningInfoCompat.replace(packageInfo, signature);
         }
+        if (packageInfo.applicationInfo != null) {
+            packageInfo.applicationInfo.flags &= ~android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE;
+        }
     }
 
+    @SuppressWarnings("unchecked")
     private static void replacePackageInfoCreator(Signature signature) {
         try {
             Parcelable.Creator<PackageInfo> creator = PackageInfo.CREATOR;

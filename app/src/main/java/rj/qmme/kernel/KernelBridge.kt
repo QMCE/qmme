@@ -37,6 +37,10 @@ object KernelBridge {
     /** Keep the init-complete callback idempotent across official and late callbacks. */
     private val kernelInitCompleteNotified = AtomicBoolean(false)
 
+    /** KernelSetterImpl 全局配置 patch 是否已注入（对照 QMCE ensureEarlyNativeBootstrap）。 */
+    @Volatile
+    private var initialModuleInjected = false
+
     // 全局服务缓存
     @Volatile
     private var cachedKs: IKernelService? = null
@@ -186,6 +190,119 @@ object KernelBridge {
         }
     }
 
+    /**
+     * Must run before KernelSetterImpl first use so native CheckConfig sees a valid
+     * version/platform. Ported from QMCE (verified against qq-sdk.jar 9.0.7.2563).
+     */
+    fun ensureEarlyNativeBootstrap() {
+        if (!initialModuleInjected) initialModuleInjected = injectInitialModule()
+        injectSAppSetting()
+        if (initialModuleInjected) reinitWrapperEngineConfig()
+    }
+
+    private fun injectInitialModule(): Boolean {
+        return runCatching {
+            val setterCls = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelSetterImpl")
+            val field = setterCls.getDeclaredField("sInitialModule")
+            field.isAccessible = true
+            val iface = Class.forName("com.tencent.qqnt.kernel.dependences.IInitialModule")
+            val delegate = field.get(null) ?: Class.forName("com.tencent.qqnt.watch.inject.InitialModuleInjector")
+                .getDeclaredConstructor()
+                .newInstance()
+            val proxy = java.lang.reflect.Proxy.newProxyInstance(
+                iface.classLoader,
+                arrayOf(iface),
+            ) { _, method, args ->
+                if (method.name == "e" || method.returnType.simpleName == "WrapperEngineGlobalConfig") {
+                    val config = method.invoke(delegate, *(args ?: emptyArray()))
+                        ?: Class.forName("com.tencent.qqnt.kernel.nativeinterface.WrapperEngineGlobalConfig")
+                            .getDeclaredConstructor()
+                            .newInstance()
+                    val configCls = config.javaClass
+                    configCls.getField("appVersion").set(config, "9.0.7.2563")
+                    configCls.getField("platformType").setInt(config, 1) // PlatformType.KANDROID
+                    configCls.getField("appType").setInt(config, 7)
+                    runCatching {
+                        configCls.getField("osVersion").set(config, android.os.Build.VERSION.RELEASE)
+                    }
+                    runCatching {
+                        val qua = Class.forName("com.tencent.qqnt.watch.inject.AppSettingInjector")
+                            .getDeclaredConstructor()
+                            .newInstance()
+                            .let { injector ->
+                                injector.javaClass.getMethod("getQUA").invoke(injector) as? String
+                            }
+                        if (!qua.isNullOrBlank()) {
+                            configCls.getField("qua").set(config, qua)
+                        }
+                    }
+                    Log.d(TAG, "bind: patched WrapperEngineGlobalConfig appVersion=9.0.7.2563 platformType=1")
+                    config
+                } else {
+                    method.invoke(delegate, *(args ?: emptyArray()))
+                }
+            }
+            field.set(null, proxy)
+            Log.d(TAG, "bind: InitialModuleInjector patched with fixed global config")
+            true
+        }.getOrElse { error ->
+            Log.e(TAG, "bind: injectInitialModule failed", error)
+            false
+        }
+    }
+
+    private fun reinitWrapperEngineConfig() {
+        runCatching {
+            val setterCls = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelSetterImpl")
+            val companionField = setterCls.getDeclaredField("Companion")
+            companionField.isAccessible = true
+            val companion = companionField.get(null)
+            val cMethod = companion.javaClass.getDeclaredMethod("c")
+            cMethod.isAccessible = true
+            cMethod.invoke(companion)
+            Log.d(TAG, "bind: reinitWrapperEngineConfig via KernelSetterImpl.Companion.c() OK")
+        }.onFailure { Log.w(TAG, "bind: reinitWrapperEngineConfig skipped", it) }
+    }
+
+    private fun injectSAppSetting(ks: IKernelService? = null) {
+        runCatching {
+            val proxy = createPatchedAppSettingInjector()
+                ?: return@runCatching
+            val setterCls = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelSetterImpl")
+            val field = setterCls.getDeclaredField("sAppSetting")
+            field.isAccessible = true
+            field.set(null, proxy)
+            if (ks != null) {
+                val ksField = ks.javaClass.getDeclaredField("sAppSetting")
+                ksField.isAccessible = true
+                ksField.set(ks, proxy)
+                Log.d(TAG, "bind: patched KernelServiceImpl.sAppSetting on $ks")
+            }
+            Log.d(TAG, "bind: AppSettingInjector patched with fixed version proxy")
+        }.onFailure { Log.e(TAG, "bind: patch AppSettingInjector failed", it) }
+    }
+
+    private fun createPatchedAppSettingInjector(): Any? {
+        return runCatching {
+            val iface = Class.forName("com.tencent.mobileqq.inject.IAppSettingInject")
+            val delegate = Class.forName("com.tencent.qqnt.watch.inject.AppSettingInjector")
+                .getDeclaredConstructor()
+                .newInstance()
+            java.lang.reflect.Proxy.newProxyInstance(
+                iface.classLoader,
+                arrayOf(iface),
+            ) { _, method, args ->
+                when (method.name) {
+                    "d" -> "9.0.7.2563"
+                    "e" -> "9.0.7.2563"
+                    "h" -> "2563"
+                    "j" -> "V 9.0.7.2563"
+                    else -> method.invoke(delegate, *(args ?: emptyArray()))
+                }
+            }
+        }.getOrNull()
+    }
+
     private fun cachedKernelServiceFor(
         runtime: AppRuntime?,
         source: String,
@@ -207,6 +324,12 @@ object KernelBridge {
         RuntimeCoordinator.currentRuntime(),
         "getKernelService",
     )
+
+    /** True once msg/recent/buddy services are all cached (QMCE parity). */
+    fun areCoreServicesReady(): Boolean =
+        cachedMsgService != null &&
+            cachedRecentService != null &&
+            cachedBuddyService != null
 
     fun getMsgService(): IMsgService? = cachedServiceFor(
         cachedMsgService,

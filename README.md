@@ -50,7 +50,10 @@ adb shell am start -n rj.qmme/.ui.MainActivity
 - **消息操作**：长按菜单支持回复、转发、多选、复制、撤回、删除、重发（危险操作二次确认）。
 - **语音**：系统录音栈发送 / 官方播放器收听。
 - **会话能力**：会话设置（置顶 / 免打扰）、群管理 Activity（全员禁言 / 公告 / 踢人）、群成员列表、本地消息搜索、输入草稿。
-- **设置**：交互开关、退出确认、清除草稿、关于页。
+- **设置**：交互开关、退出确认、清除草稿、AI 服务端点配置、关于页。
+- **通知**：消息通知与联系人/群系统通知（好友申请、群管理通知），通知中心页可处理申请；前台会话自动抑制当前聊天通知；通知点击直达对应会话。
+- **AI 摘要**：聊天工具栏一键总结最近消息，OpenAI 兼容流式输出；内置 opencode zen 免费模型 `big-pickle`（匿名可用），也可在设置页自定义端点覆盖。
+- **AI 助手（Fluoxetine）**：可调用 QQ 工具的对话式 Agent——发消息/撤回/已读、群管理（禁言/踢人/公告）、好友与群通知审批、置顶/免打扰、事件监听与定时提醒；写操作逐条批准，默认关闭，设置中开启。
 - **其它**：表情资源桥接、APNG/Lottie 富图 native 初始化、崩溃捕获页、登录后进程重启以获得干净的内核初始化。
 
 尚未完成：群聊 chatType/peerUid 映射的真机验证、QQ 空间、音视频通话，以及富媒体收发的服务端联调。
@@ -76,7 +79,7 @@ adb shell am start -n rj.qmme/.ui.MainActivity
 | 构建  | Android Gradle Plugin 9.3.0，Gradle 9.5.0                                          |
 | UI  | Hikage 1.1.1（原生 View + Kotlin DSL）、BetterAndroid、Material Components、RecyclerView |
 | 架构  | MVVM（AndroidX ViewModel + Lifecycle）、Kotlin Coroutines / StateFlow                |
-| 底层  | com.tencent.qqlite 9.0.7（MSF + NT Kernel，`appId=537282233`）、MMKV/QMMKV            |
+| 底层  | `qq-sdk.jar`（手表 QQ 9.0.7.2563 完整提取，MSF + NT Kernel，`appId=537282233`）、MMKV/QMMKV    |
 | ABI | 仅 `armeabi-v7a`；`minSdk 23`，`targetSdk / compileSdk 37`                           |
 
 ---
@@ -99,18 +102,36 @@ kernel/    KernelBridge + ProjectKernelBootstrap/Dependencies/DeviceInfo
              桥接 MSF 推送与前台状态
 
 data/      ChatRepository（IKernelMsgService/kernelpublic.Contact 适配层）、
-           LoginPrefs、OnlineStatus、MediaStoreSaver、EmotionAssetBridge
+           LoginPrefs、OnlineStatus、MediaStoreSaver、EmotionAssetBridge、
+           notify/（联系人/群系统通知仓库）、AiSettings、ai/（SSE 摘要客户端）
 
-viewmodel/ AuthViewModel · ChatListViewModel · ChatDetailViewModel · ContactsViewModel
+viewmodel/ AuthViewModel · ChatListViewModel · ChatDetailViewModel · ContactsViewModel ·
+           NotificationCenterViewModel
 
 ui/        MainActivity + ViewNavigator（基于 View 的导航栈，每页独立 LifecycleOwner）
            各 *Hikagable 页面（Login/Main/ChatDetail/ImagePreview/Crash）与 Adapter
 
 fix/       兼容垫片：LegacyKiller（包名映射 PM 代理）、
-           PackageSignatureProvider/PkgSignFix/SignatureProbe（IPC 签名伪装）等
+           PackageSignatureProvider/PkgSignFix/SignatureProbe（IPC 签名伪装）、
+           KtFix（Kotlin stdlib 桥，jar 内 1148 处调用）/ ResCompat（官方字符串资源兜底）/
+           PendingIntentCompat（S+ 补 FLAG_IMMUTABLE）等
 ```
 
 **运行时生命周期**：`COLD → ATTACHING → APPLICATION_READY → RUNTIME_CREATED → ACCOUNT_BOUND → KERNEL_STARTING → ONLINE`，由 `RuntimeCoordinator` 统一记录与保护。
+
+### 关于运行时 jar
+
+`app/libs/qq-sdk.jar` 是手表 QQ 9.0.7.2563 的完整提取（34543 个类，对照 QMCE 一致），
+在此基础上做了两步离线处理（工具链见 `work/`，一次性产物，不进构建流程）：
+
+1. **包名重定向**：ASM 把 jar 内 4 个宿主类引用整体改写到 `rj.qmme.*`
+   （`Flag`、`fix/KtFix`、`fix/PendingIntentCompat`、`fix/ResCompat`），全量校验 0 残留。
+2. **签名 patch 重打**：`oicq/wlogin_sdk/tools/util`（`get_apk_id` / `get_apk_v` /
+   `getPkgSigFromApkName`）与 `com/tencent/mobileqq/msf/core/auth/c`（两个 `a(PackageManager,...)`）
+   共 5 个方法体重定向到 `rj.qmme.fix.PkgSignFix`。
+
+jar 调用的全部 153 条 `KtFix` 方法签名固化在 `work/ktfix-contract.txt`，
+`fix/KtFix.kt` 覆盖并逐条核对（差集必须为 0）。
 
 ---
 
@@ -175,4 +196,5 @@ export ANDROID_SDK_ROOT=$ANDROID_HOME
 ## 已知限制
 
 - 仅打包 `armeabi-v7a`，需在支持该 ABI 的设备 / 模拟器上运行。
-- 富媒体（图片以外）、语音、回复、撤回时限、转发、多选等尚未完成。
+- AI 功能默认走内置 opencode zen 免费端点（`big-pickle`，匿名可用）；自定义端点需三项齐全。
+- 群聊 chatType/peerUid 映射的真机验证、QQ 空间、音视频通话、富媒体收发的服务端联调仍在进行中。
