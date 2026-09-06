@@ -9,6 +9,8 @@ import com.tencent.qphone.base.util.BaseApplication;
 import com.tencent.qphone.base.util.ROMUtil;
 import com.tencent.qqnt.kernel.nativeinterface.DeviceInfo;
 
+import java.io.File;
+
 import mqq.app.AppRuntime;
 
 /**
@@ -83,11 +85,100 @@ final class ProjectKernelDeviceInfo {
         // KidInfoUtil is the project-side non-reentrant equivalent.
         try {
             String raw = com.tencent.mobileqq.utils.KidInfoUtil.getGuid(context);
-            return valueOrEmpty(raw);
+            String guid = valueOrEmpty(raw);
+            if (guid.isEmpty()) {
+                Log.w(TAG, "ProjectKernelDeviceInfo: KidInfoUtil returned empty GUID");
+                return loadOrCreatePersistedGuid(context);
+            }
+            // Adopt the official GUID into the project store so later reads
+            // stay stable even if KidInfoUtil itself fails.
+            persistGuid(context, guid);
+            return guid;
         } catch (Throwable error) {
             Log.w(TAG, "ProjectKernelDeviceInfo: GUID failed", error);
-            return "";
+            return loadOrCreatePersistedGuid(context);
         }
+    }
+
+    private static final String GUID_FILE = "qmme_device_guid";
+
+    private static String loadOrCreatePersistedGuid(Context context) {
+        String persisted = loadPersistedGuid(context);
+        if (persisted != null && !persisted.isEmpty()) {
+            return persisted;
+        }
+        String generated = generateGuid();
+        persistGuid(context, generated);
+        Log.i(TAG, "ProjectKernelDeviceInfo: created project-persisted GUID len=" + generated.length());
+        return generated;
+    }
+
+    private static String loadPersistedGuid(Context context) {
+        try {
+            File file = new File(context.getFilesDir(), GUID_FILE);
+            if (!file.isFile()) return null;
+            String value = readFirstLine(file);
+            return valueOrEmpty(value);
+        } catch (Throwable error) {
+            Log.w(TAG, "ProjectKernelDeviceInfo: persisted GUID read failed", error);
+            return null;
+        }
+    }
+
+    private static void persistGuid(Context context, String guid) {
+        try {
+            File file = new File(context.getFilesDir(), GUID_FILE);
+            File tmp = new File(file.getParentFile(), GUID_FILE + ".tmp");
+            java.io.FileOutputStream out = new java.io.FileOutputStream(tmp);
+            try {
+                out.write((guid + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                out.flush();
+                out.getFD().sync();
+            } finally {
+                out.close();
+            }
+            if (!tmp.renameTo(file)) {
+                // Fallback: direct write if the atomic rename is unavailable.
+                java.io.FileOutputStream direct = new java.io.FileOutputStream(file);
+                try {
+                    direct.write((guid + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                } finally {
+                    direct.close();
+                }
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "ProjectKernelDeviceInfo: persisted GUID write failed", error);
+        }
+    }
+
+    private static String readFirstLine(File file) {
+        try {
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(
+                            new java.io.FileInputStream(file),
+                            java.nio.charset.StandardCharsets.UTF_8
+                    )
+            );
+            try {
+                return reader.readLine();
+            } finally {
+                reader.close();
+            }
+        } catch (Throwable error) {
+            return null;
+        }
+    }
+
+    /** 32 lowercase hex chars (16 random bytes), opaque to the native layer. */
+    private static String generateGuid() {
+        byte[] random = new byte[16];
+        new java.security.SecureRandom().nextBytes(random);
+        StringBuilder builder = new StringBuilder(random.length * 2);
+        for (byte b : random) {
+            builder.append(Character.forDigit((b >> 4) & 0xF, 16));
+            builder.append(Character.forDigit(b & 0xF, 16));
+        }
+        return builder.toString();
     }
 
     private static String runRomName() {

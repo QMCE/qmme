@@ -31,6 +31,16 @@ import rj.qmme.diagnostics.OfflineDiagnostics;
  * Project-owned equivalent of the small native-engine bootstrap performed by
  * KernelSetterImpl's generated companion.  It deliberately does not create or
  * invoke any QQ injector; it only uses the public Watch wrapper-engine API.
+ *
+ * Since the full qq-sdk.jar startup chain (QMCE-verified) initializes the
+ * wrapper engine once during Application.onCreate via
+ * KernelBridge.ensureEarlyNativeBootstrap() -> KernelSetterImpl.Companion.c(),
+ * this class must not call initWithMobileConfig a second time on the same
+ * engine singleton.  The native engine rejects the duplicate initialization
+ * (returns false), which previously aborted the kernel bind before
+ * KernelService.start() and left the kernel permanently not-ready.
+ * {@code engineAlreadyInitialized} is the process-local record of that early
+ * initialization; when set, the second initWithMobileConfig is skipped.
  */
 final class ProjectKernelBootstrap {
     private static final String TAG = "QMME";
@@ -42,10 +52,24 @@ final class ProjectKernelBootstrap {
     private ProjectKernelBootstrap() {
     }
 
-    static boolean initialize(Context context, AppRuntime runtime) {
+    static boolean initialize(Context context, AppRuntime runtime, boolean engineAlreadyInitialized) {
         if (context == null || runtime == null) {
             Log.e(TAG, "KernelBootstrap: context/runtime is null");
             return false;
+        }
+        if (engineAlreadyInitialized) {
+            Log.i(
+                    TAG,
+                    "KernelBootstrap: wrapper engine already initialized by early bootstrap; " +
+                            "skipping duplicate initWithMobileConfig"
+            );
+            OfflineDiagnostics.INSTANCE.record(
+                    context.getApplicationContext(),
+                    "wrapper_bootstrap_skipped",
+                    "runtimeIdentity=" + System.identityHashCode(runtime) +
+                            " reason=alreadyInitializedByEarlyBootstrap"
+            );
+            return true;
         }
         try {
             IQQNTWrapperEngine engine = IQQNTWrapperEngine.CppProxy.get();

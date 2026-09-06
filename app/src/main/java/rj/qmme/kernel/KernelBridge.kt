@@ -197,8 +197,20 @@ object KernelBridge {
     fun ensureEarlyNativeBootstrap() {
         if (!initialModuleInjected) initialModuleInjected = injectInitialModule()
         injectSAppSetting()
-        if (initialModuleInjected) reinitWrapperEngineConfig()
+        if (initialModuleInjected && reinitWrapperEngineConfig()) {
+            // The QMCE-verified companion path already initialized the native
+            // wrapper engine (with the patched config and the official global
+            // adapter).  ProjectKernelBootstrap must NOT call
+            // initWithMobileConfig a second time: the native engine rejects the
+            // duplicate initialization and returns false, which previously
+            // aborted the whole kernel bind ("project wrapper-engine bootstrap
+            // failed") and left isNTStartFinish=false forever.
+            earlyWrapperEngineInitialized = true
+        }
     }
+
+    @Volatile
+    private var earlyWrapperEngineInitialized = false
 
     private fun injectInitialModule(): Boolean {
         return runCatching {
@@ -251,8 +263,8 @@ object KernelBridge {
         }
     }
 
-    private fun reinitWrapperEngineConfig() {
-        runCatching {
+    private fun reinitWrapperEngineConfig(): Boolean {
+        return runCatching {
             val setterCls = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelSetterImpl")
             val companionField = setterCls.getDeclaredField("Companion")
             companionField.isAccessible = true
@@ -261,7 +273,9 @@ object KernelBridge {
             cMethod.isAccessible = true
             cMethod.invoke(companion)
             Log.d(TAG, "bind: reinitWrapperEngineConfig via KernelSetterImpl.Companion.c() OK")
+            true
         }.onFailure { Log.w(TAG, "bind: reinitWrapperEngineConfig skipped", it) }
+            .getOrDefault(false)
     }
 
     private fun injectSAppSetting(ks: IKernelService? = null) {
@@ -970,7 +984,8 @@ object KernelBridge {
                 val context = runtime?.applicationContext
                 if (runtime == null || context == null || !ProjectKernelBootstrap.initialize(
                         context,
-                        runtime
+                        runtime,
+                        earlyWrapperEngineInitialized,
                     )
                 ) {
                     Log.e(TAG, "KernelBridge: project wrapper-engine bootstrap failed")
